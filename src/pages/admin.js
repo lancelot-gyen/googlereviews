@@ -184,10 +184,8 @@ function storeModal(row, googleGroups, areaList, bgList) {
 
 // ── Areas ──
 async function areas(content) {
-  const { data: googleGroups } = await supabase.from('google_group').select('id, group_name')
   const { data: rows, error } = await supabase.from('areas').select(`
-    id, area_name, group_id,
-    google_group(group_name),
+    id, area_name,
     area_members(id, name, email)
   `).order('id')
 
@@ -198,10 +196,9 @@ async function areas(content) {
       <button class="btn btn-primary" id="btn-add-area">＋ 新增區域</button>
     </div>
     <div class="table-wrap"><div class="table-scroll"><table>
-      <thead><tr><th>區域名稱</th><th>品牌</th><th>區域主管</th><th>操作</th></tr></thead>
+      <thead><tr><th>區域名稱</th><th>區域主管</th><th>操作</th></tr></thead>
       <tbody>${rows.map(r => `<tr>
         <td>${esc(r.area_name)}</td>
-        <td>${esc(r.google_group?.group_name ?? '—')}</td>
         <td>${(r.area_members ?? []).map(m =>
           `<div style="font-size:12px">${esc(m.name)} <span style="color:var(--gray-600)">${esc(m.email)}</span></div>`
         ).join('') || '—'}</td>
@@ -210,13 +207,13 @@ async function areas(content) {
     </table></div></div>
   `
 
-  document.getElementById('btn-add-area').addEventListener('click', () => areaModal(null, googleGroups))
+  document.getElementById('btn-add-area').addEventListener('click', () => areaModal(null))
   content.querySelectorAll('.btn-edit-area').forEach(btn =>
     btn.addEventListener('click', () =>
-      areaModal(rows.find(r => r.id == btn.dataset.id), googleGroups)))
+      areaModal(rows.find(r => r.id == btn.dataset.id))))
 }
 
-function areaModal(row, googleGroups) {
+function areaModal(row) {
   const isEdit = !!row
   let pendingMembers = (row?.area_members ?? []).map(m => ({ ...m }))
 
@@ -224,13 +221,6 @@ function areaModal(row, googleGroups) {
     <div class="form-group">
       <label class="form-label">區域名稱 *</label>
       <input class="form-input" id="m-area-name" value="${esc(row?.area_name ?? '')}" />
-    </div>
-    <div class="form-group">
-      <label class="form-label">品牌群組</label>
-      <select class="form-input" id="m-group-id">
-        <option value="">—</option>
-        ${(googleGroups ?? []).map(g => `<option value="${g.id}" ${row?.group_id == g.id ? 'selected' : ''}>${esc(g.group_name)}</option>`).join('')}
-      </select>
     </div>
     <div class="form-group">
       <label class="form-label">區域主管（可多人）</label>
@@ -245,10 +235,7 @@ function areaModal(row, googleGroups) {
     const areaName = document.getElementById('m-area-name').value.trim()
     if (!areaName) { toast('區域名稱必填', 'error'); return false }
 
-    const payload = {
-      area_name: areaName,
-      group_id: document.getElementById('m-group-id').value || null,
-    }
+    const payload = { area_name: areaName }
 
     let areaId = row?.id
     if (isEdit) {
