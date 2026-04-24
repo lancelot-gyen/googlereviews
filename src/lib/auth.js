@@ -9,7 +9,7 @@ export const ROLES = {
 }
 
 export const ROLE_LABELS = {
-  store: '門店店長',
+  store: '門店人員',
   area_manager: '區域主管',
   group_manager: '事業群主管',
   headquarters: '總部',
@@ -34,55 +34,58 @@ export async function getSession() {
   return session
 }
 
+/**
+ * Step 1: 查 user_roles 取得 role
+ * Step 2: 依 role 查對應 members 表取得 scopeIds
+ */
 export async function resolveRole(email) {
-  // headquarters / super_admin — maintained in user_roles
   const { data: userRole } = await supabase
     .from('user_roles')
     .select('role')
     .eq('email', email)
     .single()
 
-  if (userRole) return { role: userRole.role, scopeIds: [], scopeNames: [] }
+  if (!userRole) return null
 
-  // group_manager — business_group_managers
-  const { data: bgmList } = await supabase
-    .from('business_group_managers')
-    .select('business_group_id')
-    .eq('manager_email', email)
+  const role = userRole.role
 
-  if (bgmList && bgmList.length > 0) {
+  if (role === ROLES.HEADQUARTERS || role === ROLES.SUPER_ADMIN) {
+    return { role, scopeIds: [], scopeNames: [] }
+  }
+
+  if (role === ROLES.STORE) {
+    const { data } = await supabase
+      .from('store_members')
+      .select('store_id, stores(store_name)')
+      .eq('email', email)
     return {
-      role: ROLES.GROUP_MANAGER,
-      scopeIds: bgmList.map(r => r.business_group_id),
+      role,
+      scopeIds: data?.map(r => r.store_id) ?? [],
+      scopeNames: data?.map(r => r.stores?.store_name).filter(Boolean) ?? [],
+    }
+  }
+
+  if (role === ROLES.AREA_MANAGER) {
+    const { data } = await supabase
+      .from('area_members')
+      .select('area_id')
+      .eq('email', email)
+    return {
+      role,
+      scopeIds: data?.map(r => r.area_id) ?? [],
       scopeNames: [],
     }
   }
 
-  // area_manager — area_managers
-  const { data: amList } = await supabase
-    .from('area_managers')
-    .select('area_id')
-    .eq('manager_email', email)
-
-  if (amList && amList.length > 0) {
+  if (role === ROLES.GROUP_MANAGER) {
+    const { data } = await supabase
+      .from('business_group_members')
+      .select('business_group_id')
+      .eq('email', email)
     return {
-      role: ROLES.AREA_MANAGER,
-      scopeIds: amList.map(r => r.area_id),
+      role,
+      scopeIds: data?.map(r => r.business_group_id) ?? [],
       scopeNames: [],
-    }
-  }
-
-  // store — store_managers
-  const { data: smList } = await supabase
-    .from('store_managers')
-    .select('store_id, stores(store_name)')
-    .eq('manager_email', email)
-
-  if (smList && smList.length > 0) {
-    return {
-      role: ROLES.STORE,
-      scopeIds: smList.map(r => r.store_id),
-      scopeNames: smList.map(r => r.stores?.store_name).filter(Boolean),
     }
   }
 
@@ -118,4 +121,12 @@ export async function getAccessibleStoreNames(roleInfo) {
   }
 
   return []
+}
+
+export function canReply(role) {
+  return [ROLES.STORE, ROLES.AREA_MANAGER, ROLES.GROUP_MANAGER, ROLES.SUPER_ADMIN].includes(role)
+}
+
+export function canClose(role) {
+  return [ROLES.GROUP_MANAGER, ROLES.SUPER_ADMIN].includes(role)
 }

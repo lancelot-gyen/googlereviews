@@ -266,6 +266,21 @@ tbody tr:hover { background: var(--gray-50); }
 .badge-unprocessed { background: #fce8e6; color: #c5221f; }
 .badge-processing   { background: #fef7e0; color: #b06000; }
 .badge-replied      { background: #e6f4ea; color: #137333; }
+.badge-closed       { background: #e8eaed; color: #5f6368; }
+
+/* ── RWD Table scroll ── */
+.table-scroll { overflow-x: auto; }
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); transition: transform .3s; }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .filter-bar { gap: 8px; }
+  .page-content { padding: 16px; }
+}
 
 /* ── Pagination ── */
 .pagination {
