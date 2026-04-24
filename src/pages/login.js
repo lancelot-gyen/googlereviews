@@ -5,13 +5,18 @@ export function renderLogin() {
   document.getElementById('app').innerHTML = `
     <div class="login-page">
       <div class="login-card">
-        <div class="login-logo">⭐</div>
+        <div class="login-logo">🔥</div>
+        <div class="login-brand-name">橘焱胡同集團</div>
         <h1>Google 評論管理系統</h1>
-        <p>請使用公司 Google 帳號登入以繼續</p>
+        <p>請使用公司 Google 帳號登入<br>以進入評論管理後台</p>
+        <div class="login-divider">安全登入</div>
         <button class="btn-google" id="btn-google-login">
           <img src="https://www.google.com/favicon.ico" alt="Google" />
           使用 Google 帳號登入
         </button>
+        <div class="login-footer">
+          僅限授權帳號使用 · 橘焱胡同集團
+        </div>
       </div>
     </div>
   `
@@ -30,13 +35,16 @@ export function renderNoAccess(email) {
     <div class="login-page">
       <div class="login-card">
         <div class="no-access">
-          <div class="icon">🚫</div>
+          <div class="icon">🔒</div>
           <h3>無存取權限</h3>
-          <p>帳號 <strong>${email}</strong> 尚未被授權，<br>請聯繫管理員開通權限。</p>
+          <p>帳號 <strong>${email}</strong> 尚未被授權，<br>請聯繫系統管理員開通權限。</p>
         </div>
         <button class="btn btn-secondary" id="btn-logout" style="margin-top:24px;width:100%;justify-content:center;">
-          登出
+          ⏻ 登出並返回
         </button>
+        <div class="login-footer">
+          橘焱胡同集團 · Google 評論管理系統
+        </div>
       </div>
     </div>
   `

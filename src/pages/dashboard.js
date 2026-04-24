@@ -59,24 +59,28 @@ export async function renderDashboard(container, user, roleInfo) {
   document.querySelector('.page-content').innerHTML = `
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="label">評論總數</div>
+        <div class="icon-circle">📋</div>
+        <div class="label">📋 評論總數</div>
         <div class="value">${total}</div>
         <div class="sub">可存取門店</div>
       </div>
-      <div class="stat-card">
-        <div class="label">未處理</div>
+      <div class="stat-card danger">
+        <div class="icon-circle">⚠️</div>
+        <div class="label">⚠️ 未處理</div>
         <div class="value" style="color:var(--danger)">${unprocessed}</div>
         <div class="sub">需要處理</div>
       </div>
-      <div class="stat-card">
-        <div class="label">已回覆</div>
+      <div class="stat-card success">
+        <div class="icon-circle">✅</div>
+        <div class="label">✅ 已回覆</div>
         <div class="value" style="color:var(--success)">${replied}</div>
         <div class="sub">回覆完成</div>
       </div>
-      <div class="stat-card">
-        <div class="label">平均星級</div>
+      <div class="stat-card accent">
+        <div class="icon-circle">⭐</div>
+        <div class="label">⭐ 平均星級</div>
         <div class="value">${avgRating}</div>
-        <div class="sub">/ 5.00</div>
+        <div class="sub">滿分 5.00 分</div>
       </div>
     </div>
 

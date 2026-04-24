@@ -12,8 +12,11 @@ export function renderLayout(user, roleInfo) {
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-logo">
-          <h1>⭐ 評論管理系統</h1>
-          <span>${label}</span>
+          <div class="sidebar-logo-brand">
+            <span class="sidebar-logo-icon">🔥</span>
+            <h1>評論管理系統</h1>
+          </div>
+          <span>橘焱胡同集團</span>
         </div>
         <nav class="sidebar-nav">
           <div class="nav-section">主選單</div>
