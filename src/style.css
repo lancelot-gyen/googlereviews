@@ -471,6 +471,31 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--gray-50); }
 tbody tr { transition: background .12s; }
 
+/* ── 可排序欄位標題 ── */
+.th-sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background .12s, color .12s;
+}
+.th-sortable:hover {
+  background: var(--gray-100) !important;
+  color: var(--primary);
+}
+.th-sorted {
+  background: linear-gradient(180deg, rgba(212,98,26,0.07) 0%, var(--gray-50) 100%) !important;
+  color: var(--primary) !important;
+}
+.sort-icon {
+  display: inline-block;
+  font-style: normal;
+  font-size: 12px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.sort-idle  { color: var(--gray-300); }
+.sort-asc   { color: var(--primary); font-weight: 900; }
+.sort-desc  { color: var(--primary); font-weight: 900; }
+
 .text-truncate { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Stars ── */

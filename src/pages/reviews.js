@@ -10,8 +10,15 @@ const STATUS_BADGE = {
   '已回覆': 'badge-replied',
 }
 
-const STAR_MAP = {
-  'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 'FIVE': 5,
+const STAR_MAP = { 'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 'FIVE': 5 }
+
+// 可排序欄位：label → { col: DB欄位, numeric: 是否數字排序 }
+const SORT_COLS = {
+  branch_name:    { label: '門店' },
+  reviewer_name:  { label: '評論者' },
+  star_rating:    { label: '星級', clientSort: true },   // text→需 client 轉換
+  review_time:    { label: '評論時間' },
+  process_status: { label: '狀態' },
 }
 
 function starsHtml(rating) {
@@ -29,10 +36,10 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
 
   let currentPage = 1
   let filters = { store: opts.filterStore || '', star: '', status: '', search: '' }
+  let sort = { col: 'review_time', dir: 'desc' }  // 預設：評論時間 ↓
 
   const uniqueStores = storeNames.slice().sort()
 
-  // 麵包屑：若從特定門店點入，顯示「返回總覽」
   const breadcrumb = opts.filterStore ? `
     <div class="breadcrumb">
       <span class="breadcrumb-link" id="bc-dashboard">📊 數據總覽</span>
@@ -88,7 +95,6 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     </div>
   `
 
-  // 麵包屑返回總覽
   document.getElementById('bc-dashboard')?.addEventListener('click', async () => {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
     document.querySelector('.nav-item[data-page="dashboard"]')?.classList.add('active')
@@ -97,8 +103,8 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
   })
 
   const doSearch = () => {
-    filters.store = document.getElementById('f-store')?.value ?? ''
-    filters.star = document.getElementById('f-star').value
+    filters.store  = document.getElementById('f-store')?.value ?? ''
+    filters.star   = document.getElementById('f-star').value
     filters.status = document.getElementById('f-status').value
     filters.search = document.getElementById('f-search').value.trim()
     currentPage = 1
@@ -108,7 +114,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
   document.getElementById('btn-search').addEventListener('click', doSearch)
   document.getElementById('btn-reset').addEventListener('click', () => {
     if (document.getElementById('f-store')) document.getElementById('f-store').value = ''
-    document.getElementById('f-star').value = ''
+    document.getElementById('f-star').value   = ''
     document.getElementById('f-status').value = ''
     document.getElementById('f-search').value = ''
     filters = { store: '', star: '', status: '', search: '' }
@@ -119,27 +125,68 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     if (e.key === 'Enter') doSearch()
   })
 
+  // ── 排序切換 ──────────────────────────────────────────────
+  function setSort(col) {
+    if (sort.col === col) {
+      sort.dir = sort.dir === 'asc' ? 'desc' : 'asc'
+    } else {
+      sort.col = col
+      sort.dir = col === 'review_time' ? 'desc' : 'asc'
+    }
+    currentPage = 1
+    loadReviews()
+  }
+
+  function sortIcon(col) {
+    if (sort.col !== col) return '<span class="sort-icon sort-idle">⇅</span>'
+    return sort.dir === 'asc'
+      ? '<span class="sort-icon sort-asc">↑</span>'
+      : '<span class="sort-icon sort-desc">↓</span>'
+  }
+
+  function thSortable(col, label, extraStyle = '') {
+    const active = sort.col === col ? 'th-sorted' : ''
+    return `<th class="th-sortable ${active}" data-sort="${col}" style="${extraStyle}">${label} ${sortIcon(col)}</th>`
+  }
+
+  // ── 資料載入 ──────────────────────────────────────────────
   async function loadReviews() {
     const wrap = document.getElementById('reviews-table-wrap')
     wrap.innerHTML = '<div class="loading"><div class="spinner"></div> 載入評論…</div>'
 
     try {
+      const isClientSort = SORT_COLS[sort.col]?.clientSort
+
       let query = supabase
         .from('google_reviews')
         .select('*', { count: 'exact' })
         .in('branch_name', storeNames)
-        .order('review_time', { ascending: false })
 
-      if (filters.store) query = query.eq('branch_name', filters.store)
-      if (filters.star) query = query.eq('star_rating', filters.star)
+      if (!isClientSort) {
+        query = query.order(sort.col, { ascending: sort.dir === 'asc' })
+      } else {
+        query = query.order('review_time', { ascending: false })
+      }
+
+      if (filters.store)  query = query.eq('branch_name', filters.store)
+      if (filters.star)   query = query.eq('star_rating', filters.star)
       if (filters.status) query = query.eq('process_status', filters.status)
       if (filters.search) query = query.ilike('review_content', `%${filters.search}%`)
 
       const from = (currentPage - 1) * PAGE_SIZE
       query = query.range(from, from + PAGE_SIZE - 1)
 
-      const { data, count, error } = await query
+      let { data, count, error } = await query
       if (error) throw error
+
+      // 星級 client-side 排序（同頁內）
+      if (isClientSort && data) {
+        data = [...data].sort((a, b) => {
+          const va = STAR_MAP[a.star_rating] ?? 0
+          const vb = STAR_MAP[b.star_rating] ?? 0
+          return sort.dir === 'asc' ? va - vb : vb - va
+        })
+      }
 
       renderTable(wrap, data ?? [], count ?? 0)
     } catch (err) {
@@ -147,6 +194,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     }
   }
 
+  // ── 渲染表格 ──────────────────────────────────────────────
   function renderTable(wrap, rows, total) {
     const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -162,13 +210,13 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
         <table>
           <thead>
             <tr>
-              <th>門店</th>
-              <th>評論者</th>
-              <th>星級</th>
+              ${thSortable('branch_name',    '門店',     'min-width:130px')}
+              ${thSortable('reviewer_name',  '評論者',   'min-width:90px')}
+              ${thSortable('star_rating',    '星級',     'min-width:100px')}
               <th>評論內容</th>
-              <th>評論時間</th>
-              <th>狀態</th>
-              <th>操作</th>
+              ${thSortable('review_time',    '評論時間', 'white-space:nowrap')}
+              ${thSortable('process_status', '狀態',     'min-width:80px')}
+              <th style="min-width:56px">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -201,6 +249,11 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
       </div>
     `
 
+    // 排序點擊
+    wrap.querySelectorAll('.th-sortable').forEach(th => {
+      th.addEventListener('click', () => setSort(th.dataset.sort))
+    })
+
     wrap.querySelectorAll('.btn-detail').forEach(btn => {
       btn.addEventListener('click', () => openModal(rows.find(r => r.id == btn.dataset.id)))
     })
@@ -209,11 +262,11 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
       btn.addEventListener('click', () => { currentPage = +btn.dataset.pg; loadReviews() })
     })
 
-    wrap.getElementById?.('pg-prev')
     document.getElementById('pg-prev')?.addEventListener('click', () => { currentPage--; loadReviews() })
     document.getElementById('pg-next')?.addEventListener('click', () => { currentPage++; loadReviews() })
   }
 
+  // ── 詳情 Modal ────────────────────────────────────────────
   function openModal(review) {
     const backdrop = document.createElement('div')
     backdrop.className = 'modal-backdrop'
@@ -273,7 +326,6 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     document.body.appendChild(backdrop)
     const close = () => backdrop.remove()
 
-    backdrop.getElementById?.('modal-close')
     document.getElementById('modal-close').addEventListener('click', close)
     document.getElementById('modal-cancel').addEventListener('click', close)
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close() })
