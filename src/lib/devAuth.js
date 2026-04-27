@@ -26,8 +26,8 @@ export function getDevSession() {
 
 /** 開發模式登入：儲存 email 到 localStorage */
 export function devSignIn(email) {
-  if (!email || !email.includes('@')) {
-    throw new Error('請輸入有效的 Email 地址')
+  if (!email || !email.trim()) {
+    throw new Error('請輸入帳號 Email')
   }
   localStorage.setItem(DEV_SESSION_KEY, email.trim().toLowerCase())
 }

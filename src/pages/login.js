@@ -32,7 +32,7 @@ function renderDevLogin() {
           <input
             id="dev-email"
             class="form-input"
-            type="email"
+            type="text"
             placeholder="請輸入 Email，例如：lancelot@gyen.com.tw"
             autocomplete="email"
             autofocus
