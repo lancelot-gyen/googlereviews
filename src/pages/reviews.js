@@ -332,8 +332,8 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
           </div>
           ` : ''}
 
-          <!-- 回覆輸入區（有回覆權限且未結案才顯示） -->
-          ${canReply && !isClosed ? `
+          <!-- 回覆輸入區（有回覆權限、未結案、且尚未回覆才顯示） -->
+          ${canReply && !isClosed && !hasReplied ? `
           <div class="detail-row" id="reply-section">
             <div class="detail-label">✏️ ${hasReplied ? '修改回覆' : '撰寫回覆'}</div>
             <textarea class="reply-textarea" id="modal-reply" rows="5" placeholder="請輸入要發佈到 Google 的回覆內容…">${esc(review.reply_content ?? '')}</textarea>
@@ -361,7 +361,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
           <button class="btn btn-secondary" id="modal-cancel">關閉</button>
           ${!isClosed ? `
             <button class="btn btn-secondary" id="modal-save">儲存狀態</button>
-            ${canReply ? `
+            ${canReply && !hasReplied ? `
             <button class="btn btn-primary" id="modal-send-reply">
               <span id="reply-btn-text">📤 送出回覆至 Google</span>
             </button>
