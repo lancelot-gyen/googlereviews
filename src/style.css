@@ -1013,6 +1013,34 @@ textarea.form-input { resize: vertical; min-height: 90px; line-height: 1.6; }
 }
 .btn-google img { width: 20px; }
 
+/* 開發模式標籤 */
+.dev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #FFF3CD, #FEE9A0);
+  color: #7A5000;
+  border: 1px solid rgba(232,168,64,0.4);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-bottom: 18px;
+}
+.dev-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  background: #E8A840;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(232,168,64,0.3);
+  animation: dev-pulse 1.8s ease-in-out infinite;
+}
+@keyframes dev-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(232,168,64,0.3); }
+  50%       { box-shadow: 0 0 0 5px rgba(232,168,64,0.1); }
+}
+
 /* 登入頁底部文字 */
 .login-footer {
   margin-top: 28px;

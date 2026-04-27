@@ -1,4 +1,5 @@
 import { signOut, ROLE_LABELS } from '../lib/auth.js'
+import { DEV_MODE, devSignOut } from '../lib/devAuth.js'
 import { toast } from '../lib/toast.js'
 
 export function renderLayout(user, roleInfo) {
@@ -49,7 +50,11 @@ export function renderLayout(user, roleInfo) {
   `
 
   document.getElementById('btn-logout').addEventListener('click', async () => {
-    await signOut()
+    if (DEV_MODE) {
+      devSignOut()
+    } else {
+      await signOut()
+    }
     location.reload()
   })
 
