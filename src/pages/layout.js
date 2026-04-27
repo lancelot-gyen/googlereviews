@@ -67,13 +67,13 @@ export function renderLayout(user, roleInfo) {
   })
 }
 
-async function navigateTo(page, user, roleInfo) {
+async function navigateTo(page, user, roleInfo, opts = {}) {
   const main = document.getElementById('main-content')
   main.innerHTML = '<div class="loading"><div class="spinner"></div> 載入中…</div>'
 
   if (page === 'reviews') {
     const { renderReviews } = await import('./reviews.js')
-    renderReviews(main, user, roleInfo)
+    renderReviews(main, user, roleInfo, opts)
   } else if (page === 'dashboard') {
     const { renderDashboard } = await import('./dashboard.js')
     renderDashboard(main, user, roleInfo)

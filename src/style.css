@@ -1273,6 +1273,96 @@ textarea.form-input { resize: vertical; min-height: 90px; line-height: 1.6; }
 }
 
 /* ══════════════════════════════════════
+   DASHBOARD — 門店列表可點擊
+══════════════════════════════════════ */
+.store-row {
+  cursor: pointer;
+  transition: background .15s;
+}
+.store-row:hover {
+  background: linear-gradient(90deg, rgba(212,98,26,0.06) 0%, var(--gray-50) 100%) !important;
+}
+.store-row:hover .store-name-text {
+  color: var(--primary);
+}
+.store-row:hover .store-arrow {
+  opacity: 1;
+  transform: translateX(3px);
+}
+
+.store-name-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+.store-name-text {
+  transition: color .15s;
+}
+.store-arrow {
+  color: var(--primary);
+  font-size: 16px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity .15s, transform .15s;
+}
+
+/* 評分樣式 */
+.rating-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rating-num {
+  font-weight: 700;
+  font-size: 14px;
+}
+.rating-high { color: var(--success); }
+.rating-mid  { color: var(--warning); }
+.rating-low  { color: var(--danger); }
+
+.stars-sm {
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+
+/* ══════════════════════════════════════
+   BREADCRUMB — 麵包屑導覽
+══════════════════════════════════════ */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--gray-600);
+}
+.breadcrumb-link {
+  color: var(--primary);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: background .15s;
+}
+.breadcrumb-link:hover {
+  background: var(--primary-glow);
+  text-decoration: underline;
+}
+.breadcrumb-sep {
+  color: var(--gray-300);
+  font-size: 16px;
+}
+.breadcrumb-current {
+  font-weight: 700;
+  color: var(--gray-800);
+  background: var(--gray-100);
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+
+/* ══════════════════════════════════════
    UTILITY
 ══════════════════════════════════════ */
 .text-primary  { color: var(--primary) !important; }

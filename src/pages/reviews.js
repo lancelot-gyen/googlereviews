@@ -24,26 +24,36 @@ function fmtDate(ts) {
   return new Date(ts).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-export async function renderReviews(container, user, roleInfo) {
+export async function renderReviews(container, user, roleInfo, opts = {}) {
   const storeNames = await getAccessibleStoreNames(roleInfo)
 
   let currentPage = 1
-  let filters = { store: '', star: '', status: '', search: '' }
+  let filters = { store: opts.filterStore || '', star: '', status: '', search: '' }
 
   const uniqueStores = storeNames.slice().sort()
+
+  // 麵包屑：若從特定門店點入，顯示「返回總覽」
+  const breadcrumb = opts.filterStore ? `
+    <div class="breadcrumb">
+      <span class="breadcrumb-link" id="bc-dashboard">📊 數據總覽</span>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-current">${esc(opts.filterStore)}</span>
+    </div>
+  ` : ''
 
   container.innerHTML = `
     <div class="page-header">
       <h2>📋 評論列表</h2>
     </div>
     <div class="page-content">
+      ${breadcrumb}
       <div class="filter-bar">
         ${uniqueStores.length > 1 ? `
         <div class="filter-group">
           <label>門店</label>
           <select class="form-control" id="f-store">
             <option value="">全部門店</option>
-            ${uniqueStores.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}
+            ${uniqueStores.map(s => `<option value="${esc(s)}" ${filters.store === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
           </select>
         </div>` : ''}
         <div class="filter-group">
@@ -77,6 +87,14 @@ export async function renderReviews(container, user, roleInfo) {
       <div id="reviews-table-wrap"></div>
     </div>
   `
+
+  // 麵包屑返回總覽
+  document.getElementById('bc-dashboard')?.addEventListener('click', async () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
+    document.querySelector('.nav-item[data-page="dashboard"]')?.classList.add('active')
+    const { navigateTo } = await import('./layout.js')
+    navigateTo('dashboard', user, roleInfo)
+  })
 
   const doSearch = () => {
     filters.store = document.getElementById('f-store')?.value ?? ''
