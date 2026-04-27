@@ -1,19 +1,19 @@
 import { supabase } from './supabase.js'
 
 export const ROLES = {
-  STORE: 'store',
-  AREA_MANAGER: 'area_manager',
+  STORE:         'store',
+  AREA_MANAGER:  'area_manager',
   GROUP_MANAGER: 'group_manager',
-  HEADQUARTERS: 'headquarters',
-  SUPER_ADMIN: 'super_admin',
+  HEADQUARTERS:  'headquarters',
+  SUPER_ADMIN:   'super_admin',
 }
 
 export const ROLE_LABELS = {
-  store: '門店店長',
-  area_manager: '區域主管',
+  store:         '門店人員',
+  area_manager:  '區域主管',
   group_manager: '事業群主管',
-  headquarters: '總部',
-  super_admin: '最高管理員',
+  headquarters:  '總部',
+  super_admin:   '最高管理員',
 }
 
 export async function signInWithGoogle() {
@@ -35,58 +35,56 @@ export async function getSession() {
 }
 
 export async function resolveRole(email) {
-  // headquarters / super_admin — maintained in user_roles
+  // 1. 確認角色
   const { data: userRole } = await supabase
     .from('user_roles')
     .select('role')
     .eq('email', email)
     .single()
 
-  if (userRole) return { role: userRole.role, scopeIds: [], scopeNames: [] }
+  if (!userRole) return null
 
-  // group_manager — business_group_managers
-  const { data: bgmList } = await supabase
-    .from('business_group_managers')
-    .select('business_group_id')
-    .eq('manager_email', email)
+  const role = userRole.role
 
-  if (bgmList && bgmList.length > 0) {
+  // 2. 依角色查詢對應的範圍（門店/區域/事業群）
+  if (role === ROLES.STORE) {
+    const { data } = await supabase
+      .from('store_members')
+      .select('store_id, stores(store_name)')
+      .eq('email', email)
     return {
-      role: ROLES.GROUP_MANAGER,
-      scopeIds: bgmList.map(r => r.business_group_id),
+      role,
+      scopeIds:   data?.map(r => r.store_id) ?? [],
+      scopeNames: data?.map(r => r.stores?.store_name).filter(Boolean) ?? [],
+    }
+  }
+
+  if (role === ROLES.AREA_MANAGER) {
+    const { data } = await supabase
+      .from('area_members')
+      .select('area_id')
+      .eq('email', email)
+    return {
+      role,
+      scopeIds:   data?.map(r => r.area_id) ?? [],
       scopeNames: [],
     }
   }
 
-  // area_manager — area_managers
-  const { data: amList } = await supabase
-    .from('area_managers')
-    .select('area_id')
-    .eq('manager_email', email)
-
-  if (amList && amList.length > 0) {
+  if (role === ROLES.GROUP_MANAGER) {
+    const { data } = await supabase
+      .from('business_group_members')
+      .select('business_group_id')
+      .eq('email', email)
     return {
-      role: ROLES.AREA_MANAGER,
-      scopeIds: amList.map(r => r.area_id),
+      role,
+      scopeIds:   data?.map(r => r.business_group_id) ?? [],
       scopeNames: [],
     }
   }
 
-  // store — store_managers
-  const { data: smList } = await supabase
-    .from('store_managers')
-    .select('store_id, stores(store_name)')
-    .eq('manager_email', email)
-
-  if (smList && smList.length > 0) {
-    return {
-      role: ROLES.STORE,
-      scopeIds: smList.map(r => r.store_id),
-      scopeNames: smList.map(r => r.stores?.store_name).filter(Boolean),
-    }
-  }
-
-  return null
+  // headquarters / super_admin — 全域存取，不需 scope
+  return { role, scopeIds: [], scopeNames: [] }
 }
 
 export async function getAccessibleStoreNames(roleInfo) {
