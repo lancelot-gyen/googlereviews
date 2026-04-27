@@ -268,57 +268,102 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
 
   // ── 詳情 Modal ────────────────────────────────────────────
   function openModal(review) {
+    const isClosed   = review.is_closed
+    const hasReplied = review.process_status === '已回覆' && review.reply_content
+    const userEmail  = user?.email ?? ''
+
     const backdrop = document.createElement('div')
     backdrop.className = 'modal-backdrop'
     backdrop.innerHTML = `
-      <div class="modal">
+      <div class="modal" style="max-width:700px">
         <div class="modal-header">
-          <h3>評論詳情</h3>
+          <h3>評論詳情
+            ${isClosed ? '<span class="badge badge-closed" style="margin-left:8px;font-size:12px">已結案</span>' : ''}
+          </h3>
           <button class="btn-close" id="modal-close">✕</button>
         </div>
         <div class="modal-body">
-          <div class="detail-row">
-            <div class="detail-label">門店</div>
-            <div class="detail-value">${esc(review.branch_name ?? '—')}</div>
+
+          <!-- 基本資訊 -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">
+            <div class="detail-row">
+              <div class="detail-label">🏪 門店</div>
+              <div class="detail-value">${esc(review.branch_name ?? '—')}</div>
+            </div>
+            <div class="detail-row">
+              <div class="detail-label">👤 評論者</div>
+              <div class="detail-value">${esc(review.reviewer_name ?? '匿名')}</div>
+            </div>
+            <div class="detail-row">
+              <div class="detail-label">⭐ 星級</div>
+              <div class="detail-value">${starsHtml(review.star_rating)}</div>
+            </div>
+            <div class="detail-row">
+              <div class="detail-label">🕐 評論時間</div>
+              <div class="detail-value">${fmtDate(review.review_time)}</div>
+            </div>
           </div>
+
+          <!-- 評論內容 -->
           <div class="detail-row">
-            <div class="detail-label">評論者</div>
-            <div class="detail-value">${esc(review.reviewer_name ?? '匿名')}</div>
+            <div class="detail-label">💬 評論內容</div>
+            <div class="detail-value" style="white-space:pre-wrap;background:var(--gray-50);border-radius:6px;padding:12px;border:1px solid var(--gray-100)">${esc(review.review_content ?? '（無文字評論）')}</div>
           </div>
-          <div class="detail-row">
-            <div class="detail-label">星級</div>
-            <div class="detail-value">${starsHtml(review.star_rating)}</div>
-          </div>
-          <div class="detail-row">
-            <div class="detail-label">評論時間</div>
-            <div class="detail-value">${fmtDate(review.review_time)}</div>
-          </div>
-          <div class="detail-row">
-            <div class="detail-label">評論內容</div>
-            <div class="detail-value" style="white-space:pre-wrap">${esc(review.review_content ?? '（無內容）')}</div>
-          </div>
+
+          <!-- AI 建議回覆 -->
           ${review.ai_reply ? `
           <div class="detail-row">
-            <div class="detail-label">🤖 AI 建議回覆</div>
-            <div class="ai-reply-box">${esc(review.ai_reply)}</div>
-          </div>
-          <div class="detail-row">
-            <div class="detail-label">AI 分析時間</div>
-            <div class="detail-value">${fmtDate(review.ai_analysis_time)}</div>
+            <div class="detail-label" style="display:flex;align-items:center;justify-content:space-between">
+              <span>🤖 AI 建議回覆</span>
+              ${!isClosed ? `<button class="btn btn-secondary btn-sm" id="btn-use-ai">套用建議</button>` : ''}
+            </div>
+            <div class="ai-reply-box" id="ai-reply-text">${esc(review.ai_reply)}</div>
           </div>
           ` : ''}
+
+          <!-- 已送出的回覆（若有） -->
+          ${hasReplied ? `
           <div class="detail-row">
-            <div class="detail-label">處理狀態</div>
-            <select class="form-control status-select" id="modal-status" style="width:auto">
-              <option value="未處理" ${review.process_status === '未處理' ? 'selected' : ''}>未處理</option>
-              <option value="處理中" ${review.process_status === '處理中' ? 'selected' : ''}>處理中</option>
-              <option value="已回覆" ${review.process_status === '已回覆' ? 'selected' : ''}>已回覆</option>
-            </select>
+            <div class="detail-label">✅ 已送出的回覆
+              <span style="font-weight:400;color:var(--gray-600);margin-left:6px">by ${esc(review.replied_by ?? '')} · ${fmtDate(review.reply_time)}</span>
+            </div>
+            <div class="info-block success" style="white-space:pre-wrap">${esc(review.reply_content)}</div>
           </div>
+          ` : ''}
+
+          <!-- 回覆輸入區（未結案才顯示） -->
+          ${!isClosed ? `
+          <div class="detail-row" id="reply-section">
+            <div class="detail-label">✏️ ${hasReplied ? '修改回覆' : '撰寫回覆'}</div>
+            <textarea class="reply-textarea" id="modal-reply" rows="5" placeholder="請輸入要發佈到 Google 的回覆內容…">${esc(review.reply_content ?? '')}</textarea>
+            <div style="margin-top:6px;font-size:12px;color:var(--gray-600)">
+              送出後將直接發佈至 Google，並自動更新狀態為「已回覆」
+            </div>
+          </div>
+          ` : ''}
+
+          <!-- 處理狀態 -->
+          <div class="detail-row">
+            <div class="detail-label">📌 處理狀態</div>
+            ${isClosed
+              ? `<span class="badge badge-closed">已結案 · ${fmtDate(review.closed_at)}</span>`
+              : `<select class="form-control status-select" id="modal-status" style="width:auto">
+                  <option value="未處理" ${review.process_status === '未處理' ? 'selected' : ''}>未處理</option>
+                  <option value="處理中" ${review.process_status === '處理中' ? 'selected' : ''}>處理中</option>
+                  <option value="已回覆" ${review.process_status === '已回覆' ? 'selected' : ''}>已回覆</option>
+                </select>`
+            }
+          </div>
+
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" id="modal-cancel">取消</button>
-          <button class="btn btn-primary" id="modal-save">儲存狀態</button>
+          <button class="btn btn-secondary" id="modal-cancel">關閉</button>
+          ${!isClosed ? `
+            <button class="btn btn-secondary" id="modal-save">儲存狀態</button>
+            <button class="btn btn-primary" id="modal-send-reply">
+              <span id="reply-btn-text">📤 送出回覆至 Google</span>
+            </button>
+          ` : ''}
         </div>
       </div>
     `
@@ -330,19 +375,78 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     document.getElementById('modal-cancel').addEventListener('click', close)
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close() })
 
-    document.getElementById('modal-save').addEventListener('click', async () => {
+    // 套用 AI 建議到回覆框
+    document.getElementById('btn-use-ai')?.addEventListener('click', () => {
+      const aiText = review.ai_reply ?? ''
+      document.getElementById('modal-reply').value = aiText
+      document.getElementById('modal-reply').focus()
+    })
+
+    // 僅儲存狀態（不送出 Google）
+    document.getElementById('modal-save')?.addEventListener('click', async () => {
       const newStatus = document.getElementById('modal-status').value
       const { error } = await supabase
         .from('google_reviews')
-        .update({ process_status: newStatus, reply_time: newStatus === '已回覆' ? new Date().toISOString() : null })
+        .update({ process_status: newStatus })
         .eq('id', review.id)
-
       if (error) {
         toast('更新失敗：' + error.message, 'error')
       } else {
         toast('狀態已更新', 'success')
         close()
         loadReviews()
+      }
+    })
+
+    // 送出回覆至 Google + 更新 DB
+    document.getElementById('modal-send-reply')?.addEventListener('click', async () => {
+      const replyText = document.getElementById('modal-reply')?.value?.trim()
+      if (!replyText) { toast('請輸入回覆內容', 'error'); return }
+
+      const btn = document.getElementById('modal-send-reply')
+      const btnText = document.getElementById('reply-btn-text')
+      btn.disabled = true
+      btnText.textContent = '送出中…'
+
+      try {
+        // 呼叫 Vercel Serverless 送出 Google 回覆
+        const res = await fetch('/api/reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reviewId:  review.review_id,
+            replyText,
+            userEmail,
+          }),
+        })
+
+        const result = await res.json()
+
+        if (!res.ok) {
+          throw new Error(result.error ?? `HTTP ${res.status}`)
+        }
+
+        // 更新 Supabase
+        const now = new Date().toISOString()
+        const { error: dbErr } = await supabase
+          .from('google_reviews')
+          .update({
+            reply_content:  replyText,
+            replied_by:     userEmail,
+            reply_time:     now,
+            process_status: '已回覆',
+          })
+          .eq('id', review.id)
+
+        if (dbErr) throw new Error('Google 回覆成功，但 DB 更新失敗：' + dbErr.message)
+
+        toast('回覆已成功發佈至 Google ✅', 'success')
+        close()
+        loadReviews()
+      } catch (err) {
+        toast('送出失敗：' + err.message, 'error')
+        btn.disabled = false
+        btnText.textContent = '📤 送出回覆至 Google'
       }
     })
   }
