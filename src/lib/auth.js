@@ -89,31 +89,27 @@ export async function resolveRole(email) {
 
 export async function getAccessibleStoreNames(roleInfo) {
   const { role, scopeIds, scopeNames } = roleInfo
+  let names = []
 
   if (role === ROLES.SUPER_ADMIN || role === ROLES.HEADQUARTERS) {
     const { data } = await supabase.from('stores').select('store_name')
-    return data?.map(s => s.store_name) ?? []
-  }
-
-  if (role === ROLES.GROUP_MANAGER) {
+    names = data?.map(s => s.store_name) ?? []
+  } else if (role === ROLES.GROUP_MANAGER) {
     const { data } = await supabase
       .from('stores')
       .select('store_name')
       .in('business_group_id', scopeIds)
-    return data?.map(s => s.store_name) ?? []
-  }
-
-  if (role === ROLES.AREA_MANAGER) {
+    names = data?.map(s => s.store_name) ?? []
+  } else if (role === ROLES.AREA_MANAGER) {
     const { data } = await supabase
       .from('stores')
       .select('store_name')
       .in('area_id', scopeIds)
-    return data?.map(s => s.store_name) ?? []
+    names = data?.map(s => s.store_name) ?? []
+  } else if (role === ROLES.STORE) {
+    names = scopeNames ?? []
   }
 
-  if (role === ROLES.STORE) {
-    return scopeNames ?? []
-  }
-
-  return []
+  // 去除重複
+  return [...new Set(names)]
 }
