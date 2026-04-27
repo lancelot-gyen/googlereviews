@@ -29,7 +29,7 @@ export function devSignIn(email) {
   if (!email || !email.trim()) {
     throw new Error('請輸入帳號 Email')
   }
-  localStorage.setItem(DEV_SESSION_KEY, email.trim().toLowerCase())
+  localStorage.setItem(DEV_SESSION_KEY, email.trim())
 }
 
 /** 開發模式登出：清除 localStorage */
