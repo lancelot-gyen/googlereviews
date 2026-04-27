@@ -271,6 +271,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     const isClosed   = review.is_closed
     const hasReplied = review.process_status === '已回覆' && review.reply_content
     const userEmail  = user?.email ?? ''
+    const canReply   = roleInfo.canReply === true
 
     const backdrop = document.createElement('div')
     backdrop.className = 'modal-backdrop'
@@ -315,7 +316,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
           <div class="detail-row">
             <div class="detail-label" style="display:flex;align-items:center;justify-content:space-between">
               <span>🤖 AI 建議回覆</span>
-              ${!isClosed ? `<button class="btn btn-secondary btn-sm" id="btn-use-ai">套用建議</button>` : ''}
+              ${!isClosed && canReply ? `<button class="btn btn-secondary btn-sm" id="btn-use-ai">套用建議</button>` : ''}
             </div>
             <div class="ai-reply-box" id="ai-reply-text">${esc(review.ai_reply)}</div>
           </div>
@@ -331,8 +332,8 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
           </div>
           ` : ''}
 
-          <!-- 回覆輸入區（未結案才顯示） -->
-          ${!isClosed ? `
+          <!-- 回覆輸入區（有回覆權限且未結案才顯示） -->
+          ${canReply && !isClosed ? `
           <div class="detail-row" id="reply-section">
             <div class="detail-label">✏️ ${hasReplied ? '修改回覆' : '撰寫回覆'}</div>
             <textarea class="reply-textarea" id="modal-reply" rows="5" placeholder="請輸入要發佈到 Google 的回覆內容…">${esc(review.reply_content ?? '')}</textarea>
@@ -360,9 +361,11 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
           <button class="btn btn-secondary" id="modal-cancel">關閉</button>
           ${!isClosed ? `
             <button class="btn btn-secondary" id="modal-save">儲存狀態</button>
+            ${canReply ? `
             <button class="btn btn-primary" id="modal-send-reply">
               <span id="reply-btn-text">📤 送出回覆至 Google</span>
             </button>
+            ` : ''}
           ` : ''}
         </div>
       </div>

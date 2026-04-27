@@ -35,16 +35,18 @@ export async function getSession() {
 }
 
 export async function resolveRole(email) {
-  // 1. 確認角色
+  // 1. 確認角色與回覆權限
   const { data: userRole } = await supabase
     .from('user_roles')
-    .select('role')
+    .select('role, can_reply')
     .eq('email', email)
     .single()
 
   if (!userRole) return null
 
-  const role = userRole.role
+  const role     = userRole.role
+  // super_admin 若 DB 未設定（舊資料），仍預設為 true
+  const canReply = userRole.can_reply ?? (role === ROLES.SUPER_ADMIN)
 
   // 2. 依角色查詢對應的範圍（門店/區域/事業群）
   if (role === ROLES.STORE) {
@@ -53,7 +55,7 @@ export async function resolveRole(email) {
       .select('store_id, stores(store_name)')
       .eq('email', email)
     return {
-      role,
+      role, canReply,
       scopeIds:   data?.map(r => r.store_id) ?? [],
       scopeNames: data?.map(r => r.stores?.store_name).filter(Boolean) ?? [],
     }
@@ -65,7 +67,7 @@ export async function resolveRole(email) {
       .select('area_id')
       .eq('email', email)
     return {
-      role,
+      role, canReply,
       scopeIds:   data?.map(r => r.area_id) ?? [],
       scopeNames: [],
     }
@@ -77,14 +79,14 @@ export async function resolveRole(email) {
       .select('business_group_id')
       .eq('email', email)
     return {
-      role,
+      role, canReply,
       scopeIds:   data?.map(r => r.business_group_id) ?? [],
       scopeNames: [],
     }
   }
 
   // headquarters / super_admin — 全域存取，不需 scope
-  return { role, scopeIds: [], scopeNames: [] }
+  return { role, canReply, scopeIds: [], scopeNames: [] }
 }
 
 export async function getAccessibleStoreNames(roleInfo) {

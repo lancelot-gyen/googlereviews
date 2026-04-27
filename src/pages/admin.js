@@ -409,17 +409,20 @@ async function users(content) {
   }
 
   content.innerHTML = `
-    <div style="margin-bottom:12px;padding:12px;background:#e8f0fe;border-radius:8px;font-size:13px;color:#1557b0">
+    <div class="info-block highlight" style="margin-bottom:12px;font-size:13px">
       💡 所有登入帳號的角色都在此管理。帳號對應到門店/區域/事業群，請到各自管理頁新增人員信箱。
     </div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
       <button class="btn btn-primary" id="btn-add-user">＋ 新增帳號</button>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>信箱</th><th>角色</th><th>建立時間</th><th>操作</th></tr></thead>
+      <thead><tr><th>信箱</th><th>角色</th><th>Google 回覆</th><th>建立時間</th><th>操作</th></tr></thead>
       <tbody>${rows.map(r => `<tr>
         <td>${esc(r.email)}</td>
         <td><span class="badge" style="background:var(--gray-100);color:var(--gray-800)">${ROLE_LABELS[r.role] ?? r.role}</span></td>
+        <td>${r.can_reply
+          ? '<span class="badge badge-replied">✓ 開啟</span>'
+          : '<span class="badge badge-closed">✗ 關閉</span>'}</td>
         <td>${fmtDate(r.created_at)}</td>
         <td>
           <button class="btn btn-secondary btn-sm btn-edit-user" data-id="${r.id}">編輯</button>
@@ -446,7 +449,7 @@ function userModal(row, allRoles, roleLabels) {
   showModal(isEdit ? '編輯帳號' : '新增帳號', `
     <div class="form-group">
       <label class="form-label">信箱 *</label>
-      <input class="form-input" id="m-email" type="email" value="${esc(row?.email ?? '')}" ${isEdit ? 'readonly style="background:var(--gray-50)"' : ''} />
+      <input class="form-input" id="m-email" type="text" value="${esc(row?.email ?? '')}" ${isEdit ? 'readonly style="background:var(--gray-50)"' : ''} />
     </div>
     <div class="form-group">
       <label class="form-label">角色 *</label>
@@ -454,10 +457,23 @@ function userModal(row, allRoles, roleLabels) {
         ${allRoles.map(r => `<option value="${r}" ${row?.role === r ? 'selected' : ''}>${roleLabels[r]}</option>`).join('')}
       </select>
     </div>
+    <div class="form-group">
+      <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Google 回覆功能</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="m-can-reply" ${row?.can_reply ? 'checked' : ''} />
+          <span class="toggle-slider"></span>
+        </label>
+      </label>
+      <div style="font-size:12px;color:var(--gray-600);margin-top:4px">
+        開啟後，該帳號可在評論詳情中送出 Google 回覆
+      </div>
+    </div>
   `, async () => {
     const payload = {
-      email: document.getElementById('m-email').value.trim(),
-      role: document.getElementById('m-role').value,
+      email:      document.getElementById('m-email').value.trim(),
+      role:       document.getElementById('m-role').value,
+      can_reply:  document.getElementById('m-can-reply').checked,
       updated_at: new Date().toISOString(),
     }
     if (!payload.email) { toast('信箱必填', 'error'); return false }
