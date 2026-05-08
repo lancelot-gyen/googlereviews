@@ -35,16 +35,31 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
   const storeNames = await getAccessibleStoreNames(roleInfo)
 
   let currentPage = 1
-  let filters = { store: opts.filterStore || '', star: '', status: '', search: '' }
-  let sort = { col: 'review_time', dir: 'desc' }  // 預設：評論時間 ↓
+  let filters = {
+    store:    opts.filterStore    || '',
+    dateFrom: opts.filterDateFrom || '',
+    dateTo:   opts.filterDateTo   || '',
+    star:     '',
+    status:   '',
+    search:   '',
+  }
+  let sort = { col: 'review_time', dir: 'desc' }
 
   const uniqueStores = storeNames.slice().sort()
 
-  const breadcrumb = opts.filterStore ? `
+  // 麵包屑：從總覽點進來時顯示（含日期資訊）
+  const hasDashboardFilter = opts.filterStore || opts.filterDateFrom || opts.filterDateTo
+  const breadcrumbSub = [
+    opts.filterStore    ? opts.filterStore : null,
+    opts.filterDateFrom ? opts.filterDateFrom : null,
+    opts.filterDateTo   ? `～ ${opts.filterDateTo}` : null,
+  ].filter(Boolean).join('　')
+
+  const breadcrumb = hasDashboardFilter ? `
     <div class="breadcrumb">
       <span class="breadcrumb-link" id="bc-dashboard">📊 數據總覽</span>
       <span class="breadcrumb-sep">›</span>
-      <span class="breadcrumb-current">${esc(opts.filterStore)}</span>
+      <span class="breadcrumb-current">${esc(breadcrumbSub)}</span>
     </div>
   ` : ''
 
@@ -63,6 +78,14 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
             ${uniqueStores.map(s => `<option value="${esc(s)}" ${filters.store === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
           </select>
         </div>` : ''}
+        <div class="filter-group">
+          <label>日期（起）</label>
+          <input type="date" class="form-control" id="f-date-from" value="${filters.dateFrom}" />
+        </div>
+        <div class="filter-group">
+          <label>日期（迄）</label>
+          <input type="date" class="form-control" id="f-date-to" value="${filters.dateTo}" />
+        </div>
         <div class="filter-group">
           <label>星級</label>
           <select class="form-control" id="f-star">
@@ -85,7 +108,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
         </div>
         <div class="filter-group">
           <label>搜尋評論</label>
-          <input class="form-control" id="f-search" placeholder="關鍵字…" style="min-width:180px" />
+          <input class="form-control" id="f-search" placeholder="關鍵字…" style="min-width:160px" />
         </div>
         <button class="btn btn-primary" id="btn-search">搜尋</button>
         <button class="btn btn-secondary" id="btn-reset">重置</button>
@@ -102,22 +125,30 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     navigateTo('dashboard', user, roleInfo)
   })
 
+  const readFilters = () => ({
+    store:    document.getElementById('f-store')?.value     ?? '',
+    dateFrom: document.getElementById('f-date-from')?.value ?? '',
+    dateTo:   document.getElementById('f-date-to')?.value   ?? '',
+    star:     document.getElementById('f-star').value,
+    status:   document.getElementById('f-status').value,
+    search:   document.getElementById('f-search').value.trim(),
+  })
+
   const doSearch = () => {
-    filters.store  = document.getElementById('f-store')?.value ?? ''
-    filters.star   = document.getElementById('f-star').value
-    filters.status = document.getElementById('f-status').value
-    filters.search = document.getElementById('f-search').value.trim()
+    filters = readFilters()
     currentPage = 1
     loadReviews()
   }
 
   document.getElementById('btn-search').addEventListener('click', doSearch)
   document.getElementById('btn-reset').addEventListener('click', () => {
-    if (document.getElementById('f-store')) document.getElementById('f-store').value = ''
+    if (document.getElementById('f-store'))     document.getElementById('f-store').value     = ''
+    if (document.getElementById('f-date-from')) document.getElementById('f-date-from').value = ''
+    if (document.getElementById('f-date-to'))   document.getElementById('f-date-to').value   = ''
     document.getElementById('f-star').value   = ''
     document.getElementById('f-status').value = ''
     document.getElementById('f-search').value = ''
-    filters = { store: '', star: '', status: '', search: '' }
+    filters = { store: '', dateFrom: '', dateTo: '', star: '', status: '', search: '' }
     currentPage = 1
     loadReviews()
   })
@@ -168,10 +199,12 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
         query = query.order('review_time', { ascending: false })
       }
 
-      if (filters.store)  query = query.eq('branch_name', filters.store)
-      if (filters.star)   query = query.eq('star_rating', filters.star)
-      if (filters.status) query = query.eq('process_status', filters.status)
-      if (filters.search) query = query.ilike('review_content', `%${filters.search}%`)
+      if (filters.store)    query = query.eq('branch_name', filters.store)
+      if (filters.dateFrom) query = query.gte('review_time', new Date(filters.dateFrom + 'T00:00:00').toISOString())
+      if (filters.dateTo)   query = query.lte('review_time', new Date(filters.dateTo   + 'T23:59:59').toISOString())
+      if (filters.star)     query = query.eq('star_rating', filters.star)
+      if (filters.status)   query = query.eq('process_status', filters.status)
+      if (filters.search)   query = query.ilike('review_content', `%${filters.search}%`)
 
       const from = (currentPage - 1) * PAGE_SIZE
       query = query.range(from, from + PAGE_SIZE - 1)

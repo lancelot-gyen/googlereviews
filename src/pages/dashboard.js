@@ -219,12 +219,16 @@ async function loadDashboard(allStoreNames, filters, container, user, roleInfo) 
     </div>
   `
 
-  // 點擊門店列 → 跳轉評論頁
+  // 點擊門店列 → 跳轉評論頁，帶入當前篩選條件（門店 + 日期）
   body.querySelectorAll('.store-row').forEach(row => {
     row.addEventListener('click', () => {
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
       document.querySelector('.nav-item[data-page="reviews"]')?.classList.add('active')
-      navigateTo('reviews', user, roleInfo, { filterStore: row.dataset.store })
+      navigateTo('reviews', user, roleInfo, {
+        filterStore:    row.dataset.store,
+        filterDateFrom: filters.dateFrom,
+        filterDateTo:   filters.dateTo,
+      })
     })
   })
 }
