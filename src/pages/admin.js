@@ -22,6 +22,7 @@ export function renderAdmin(container, user, roleInfo) {
         <button class="tab-btn" data-tab="groups">品牌群組</button>
         <button class="tab-btn" data-tab="business">事業群</button>
         <button class="tab-btn" data-tab="users">使用者權限</button>
+        <button class="tab-btn" data-tab="import">評論匯入</button>
       </div>
       <div id="tab-content"></div>
     </div>
@@ -41,7 +42,7 @@ export function renderAdmin(container, user, roleInfo) {
 async function loadTab(tab) {
   const content = document.getElementById('tab-content')
   content.innerHTML = '<div class="loading"><div class="spinner"></div> 載入中…</div>'
-  const handlers = { stores, areas, groups, business, users }
+  const handlers = { stores, areas, groups, business, users, import: importReviews }
   if (handlers[tab]) await handlers[tab](content)
 }
 
@@ -483,6 +484,90 @@ function userModal(row, allRoles, roleLabels) {
     if (error) { toast('儲存失敗：' + error.message, 'error'); return false }
     toast(isEdit ? '帳號已更新' : '帳號已新增', 'success')
     loadTab('users')
+  })
+}
+
+// ── Import Reviews（從 Google Sheet 匯入評論）──
+const REVIEW_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1O_VO757PAt7NDWbhNMAL7_b4WxkICJqH4KuKXND2S2U/edit?gid=0'
+
+async function importReviews(content) {
+  const [{ count }, { data: latestRows }] = await Promise.all([
+    supabase.from('google_reviews').select('id', { count: 'exact', head: true }),
+    supabase.from('google_reviews').select('review_time').order('review_time', { ascending: false }).limit(1),
+  ])
+  const latest = latestRows?.[0]?.review_time
+
+  content.innerHTML = `
+    <div class="info-block highlight" style="margin-bottom:16px;font-size:13px">
+      💡 從 <a href="${REVIEW_SHEET_URL}" target="_blank" rel="noopener">「Google評論」試算表</a>
+      匯入評論到資料庫。已存在的評論（相同評論ID）會自動跳過，不會覆蓋網站上的處理狀態與回覆紀錄。
+    </div>
+
+    <div class="table-wrap" style="padding:20px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-size:12px;color:var(--gray-600);margin-bottom:4px">資料庫目前評論數</div>
+          <div style="font-size:24px;font-weight:600" id="stat-count">${count ?? '—'}</div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--gray-600);margin-bottom:4px">最新評論時間</div>
+          <div style="font-size:24px;font-weight:600" id="stat-latest">${latest ? fmtDate(latest) : '—'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn btn-primary" id="btn-import">📥 開始匯入</button>
+      <span id="import-status" style="font-size:13px;color:var(--gray-600)"></span>
+    </div>
+    <div id="import-result" style="margin-top:16px"></div>
+  `
+
+  const btn       = document.getElementById('btn-import')
+  const statusEl  = document.getElementById('import-status')
+  const resultEl  = document.getElementById('import-result')
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true
+    statusEl.textContent = '匯入中，請稍候…（資料量大時約需數十秒）'
+    resultEl.innerHTML = ''
+
+    try {
+      const res = await fetch('/api/import-reviews', { method: 'POST' })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error ?? `HTTP ${res.status}`)
+
+      resultEl.innerHTML = `
+        <div class="info-block success" style="font-size:14px">
+          ✅ 匯入完成：Sheet 共 <strong>${result.total}</strong> 筆，
+          新增 <strong>${result.inserted}</strong> 筆，
+          跳過（已存在）<strong>${result.skipped}</strong> 筆
+          ${result.invalid ? `，格式異常 ${result.invalid} 筆` : ''}
+        </div>
+      `
+      toast(`匯入完成，新增 ${result.inserted} 筆評論`, 'success')
+      statusEl.textContent = ''
+      btn.disabled = false
+
+      // 重新整理統計數字（保留結果訊息）
+      const [{ count: newCount }, { data: newLatestRows }] = await Promise.all([
+        supabase.from('google_reviews').select('id', { count: 'exact', head: true }),
+        supabase.from('google_reviews').select('review_time').order('review_time', { ascending: false }).limit(1),
+      ])
+      const statCount  = document.getElementById('stat-count')
+      const statLatest = document.getElementById('stat-latest')
+      if (statCount)  statCount.textContent = newCount ?? '—'
+      if (statLatest) statLatest.textContent = newLatestRows?.[0]?.review_time ? fmtDate(newLatestRows[0].review_time) : '—'
+    } catch (err) {
+      resultEl.innerHTML = `
+        <div class="info-block" style="font-size:14px;background:#fdecea;border:1px solid #f5c6cb;color:#b71c1c">
+          ⚠️ 匯入失敗：${esc(err.message)}
+        </div>
+      `
+      toast('匯入失敗：' + err.message, 'error')
+      statusEl.textContent = ''
+      btn.disabled = false
+    }
   })
 }
 
