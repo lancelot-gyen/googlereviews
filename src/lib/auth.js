@@ -1,19 +1,19 @@
 import { supabase } from './supabase.js'
 
 export const ROLES = {
-  STORE: 'store',
-  AREA_MANAGER: 'area_manager',
+  STORE:         'store',
+  AREA_MANAGER:  'area_manager',
   GROUP_MANAGER: 'group_manager',
-  HEADQUARTERS: 'headquarters',
-  SUPER_ADMIN: 'super_admin',
+  HEADQUARTERS:  'headquarters',
+  SUPER_ADMIN:   'super_admin',
 }
 
 export const ROLE_LABELS = {
-  store: '門店人員',
-  area_manager: '區域主管',
+  store:         '門店人員',
+  area_manager:  '區域主管',
   group_manager: '事業群主管',
-  headquarters: '總部',
-  super_admin: '最高管理員',
+  headquarters:  '總部',
+  super_admin:   '最高管理員',
 }
 
 export async function signInWithGoogle() {
@@ -34,33 +34,29 @@ export async function getSession() {
   return session
 }
 
-/**
- * Step 1: 查 user_roles 取得 role
- * Step 2: 依 role 查對應 members 表取得 scopeIds
- */
 export async function resolveRole(email) {
+  // 1. 確認角色與回覆權限
   const { data: userRole } = await supabase
     .from('user_roles')
-    .select('role')
+    .select('role, can_reply')
     .eq('email', email)
     .single()
 
   if (!userRole) return null
 
-  const role = userRole.role
+  const role     = userRole.role
+  // super_admin 若 DB 未設定（舊資料），仍預設為 true
+  const canReply = userRole.can_reply ?? (role === ROLES.SUPER_ADMIN)
 
-  if (role === ROLES.HEADQUARTERS || role === ROLES.SUPER_ADMIN) {
-    return { role, scopeIds: [], scopeNames: [] }
-  }
-
+  // 2. 依角色查詢對應的範圍（門店/區域/事業群）
   if (role === ROLES.STORE) {
     const { data } = await supabase
       .from('store_members')
       .select('store_id, stores(store_name)')
       .eq('email', email)
     return {
-      role,
-      scopeIds: data?.map(r => r.store_id) ?? [],
+      role, canReply,
+      scopeIds:   data?.map(r => r.store_id) ?? [],
       scopeNames: data?.map(r => r.stores?.store_name).filter(Boolean) ?? [],
     }
   }
@@ -71,8 +67,8 @@ export async function resolveRole(email) {
       .select('area_id')
       .eq('email', email)
     return {
-      role,
-      scopeIds: data?.map(r => r.area_id) ?? [],
+      role, canReply,
+      scopeIds:   data?.map(r => r.area_id) ?? [],
       scopeNames: [],
     }
   }
@@ -83,50 +79,39 @@ export async function resolveRole(email) {
       .select('business_group_id')
       .eq('email', email)
     return {
-      role,
-      scopeIds: data?.map(r => r.business_group_id) ?? [],
+      role, canReply,
+      scopeIds:   data?.map(r => r.business_group_id) ?? [],
       scopeNames: [],
     }
   }
 
-  return null
+  // headquarters / super_admin — 全域存取，不需 scope
+  return { role, canReply, scopeIds: [], scopeNames: [] }
 }
 
 export async function getAccessibleStoreNames(roleInfo) {
   const { role, scopeIds, scopeNames } = roleInfo
+  let names = []
 
   if (role === ROLES.SUPER_ADMIN || role === ROLES.HEADQUARTERS) {
     const { data } = await supabase.from('stores').select('store_name')
-    return data?.map(s => s.store_name) ?? []
-  }
-
-  if (role === ROLES.GROUP_MANAGER) {
+    names = data?.map(s => s.store_name) ?? []
+  } else if (role === ROLES.GROUP_MANAGER) {
     const { data } = await supabase
       .from('stores')
       .select('store_name')
       .in('business_group_id', scopeIds)
-    return data?.map(s => s.store_name) ?? []
-  }
-
-  if (role === ROLES.AREA_MANAGER) {
+    names = data?.map(s => s.store_name) ?? []
+  } else if (role === ROLES.AREA_MANAGER) {
     const { data } = await supabase
       .from('stores')
       .select('store_name')
       .in('area_id', scopeIds)
-    return data?.map(s => s.store_name) ?? []
+    names = data?.map(s => s.store_name) ?? []
+  } else if (role === ROLES.STORE) {
+    names = scopeNames ?? []
   }
 
-  if (role === ROLES.STORE) {
-    return scopeNames ?? []
-  }
-
-  return []
-}
-
-export function canReply(role) {
-  return [ROLES.STORE, ROLES.AREA_MANAGER, ROLES.GROUP_MANAGER, ROLES.SUPER_ADMIN].includes(role)
-}
-
-export function canClose(role) {
-  return [ROLES.GROUP_MANAGER, ROLES.SUPER_ADMIN].includes(role)
+  // 去除重複
+  return [...new Set(names)]
 }

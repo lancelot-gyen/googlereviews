@@ -1,61 +1,73 @@
-/**
- * Vercel Serverless Function
- * POST /api/reply
- * Body: { reviewId, comment }
- *
- * 使用 GOOGLE_REFRESH_TOKEN 換取 Access Token，
- * 再呼叫 Google My Business API 送出回覆。
- */
+// Vercel Serverless Function
+// POST /api/reply
+// Body: { reviewId, replyText, userEmail }
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
+    return res.status(405).json({ error: 'Method Not Allowed' })
   }
 
-  const { reviewId, comment } = req.body ?? {}
+  const { reviewId, replyText, userEmail } = req.body ?? {}
 
-  if (!reviewId || !comment) {
-    return res.status(400).json({ error: 'reviewId and comment are required' })
+  if (!reviewId || !replyText) {
+    return res.status(400).json({ error: '缺少必要參數：reviewId 或 replyText' })
   }
 
+  // review_id 格式：accounts/{accountId}/locations/{locationId}/reviews/{reviewId}
+  const parts = reviewId.split('/')
+  if (parts.length < 6) {
+    return res.status(400).json({ error: 'reviewId 格式錯誤，應為 accounts/.../locations/.../reviews/...' })
+  }
+  const accountId  = parts[1]
+  const locationId = parts[3]
+  const reviewPart = parts[5]
+
+  // Step 1：用 refresh_token 換取 access_token
+  let accessToken
   try {
-    // Step 1: 用 Refresh Token 換 Access Token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_id:     process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-        grant_type: 'refresh_token',
+        grant_type:    'refresh_token',
       }),
     })
-
     const tokenData = await tokenRes.json()
-    if (!tokenRes.ok || !tokenData.access_token) {
-      throw new Error('取得 Access Token 失敗：' + (tokenData.error_description ?? tokenData.error))
+    if (!tokenData.access_token) {
+      return res.status(500).json({ error: '取得 access_token 失敗', detail: tokenData })
     }
+    accessToken = tokenData.access_token
+  } catch (err) {
+    return res.status(500).json({ error: '換取 token 時發生錯誤', detail: err.message })
+  }
 
-    // Step 2: 呼叫 Google My Business API 送出回覆
-    const apiRes = await fetch(
-      `https://mybusiness.googleapis.com/v4/${reviewId}/reply`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ comment }),
-      }
-    )
+  // Step 2：呼叫 Google My Business Reviews API
+  const apiUrl = `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/reviews/${reviewPart}/reply`
 
-    if (!apiRes.ok) {
-      const errData = await apiRes.json().catch(() => ({}))
-      throw new Error('Google API 錯誤：' + (errData?.error?.message ?? apiRes.statusText))
+  try {
+    const replyRes = await fetch(apiUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ comment: replyText }),
+    })
+
+    if (!replyRes.ok) {
+      let errData = {}
+      try { errData = await replyRes.json() } catch {}
+      return res.status(replyRes.status).json({
+        error: `Google API 回傳錯誤（${replyRes.status}）`,
+        detail: errData,
+      })
     }
 
     return res.status(200).json({ success: true })
   } catch (err) {
-    console.error('[api/reply]', err)
-    return res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: '呼叫 Google API 時發生錯誤', detail: err.message })
   }
 }
