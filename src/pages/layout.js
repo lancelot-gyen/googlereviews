@@ -7,7 +7,8 @@ export function renderLayout(user, roleInfo) {
   const initial = (user.user_metadata?.full_name || user.email || '?')[0].toUpperCase()
   const name = user.user_metadata?.full_name || user.email
 
-  const isSuperAdmin = roleInfo.role === 'super_admin'
+  const isSuperAdmin   = roleInfo.role === 'super_admin'
+  const canAccessAdmin = roleInfo.role === 'super_admin' || roleInfo.role === 'headquarters'
 
   document.getElementById('app').innerHTML = `
     <div class="layout">
@@ -27,7 +28,7 @@ export function renderLayout(user, roleInfo) {
           <div class="nav-item" data-page="dashboard">
             <span class="icon">📊</span> 數據總覽
           </div>
-          ${isSuperAdmin ? `
+          ${canAccessAdmin ? `
           <div class="nav-section">系統管理</div>
           <div class="nav-item" data-page="admin">
             <span class="icon">⚙️</span> 資料管理

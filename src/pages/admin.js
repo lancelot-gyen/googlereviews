@@ -3,27 +3,33 @@ import { ROLES } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 
 export function renderAdmin(container, user, roleInfo) {
-  if (roleInfo.role !== ROLES.SUPER_ADMIN) {
+  const isSuperAdmin  = roleInfo.role === ROLES.SUPER_ADMIN
+  const isHeadquarters = roleInfo.role === ROLES.HEADQUARTERS
+
+  if (!isSuperAdmin && !isHeadquarters) {
     container.innerHTML = `
       <div class="page-header"><h2>⚙️ 資料管理</h2></div>
       <div class="page-content">
-        <div class="empty-state"><div class="icon">🔒</div><p>此頁面僅限最高管理員存取</p></div>
+        <div class="empty-state"><div class="icon">🔒</div><p>此頁面僅限最高管理員與總部存取</p></div>
       </div>
     `
     return
   }
 
-  container.innerHTML = `
-    <div class="page-header"><h2>⚙️ 資料管理</h2></div>
-    <div class="page-content">
-      <div class="tabs">
-        <button class="tab-btn active" data-tab="stores">門店管理</button>
+  // 總部只看到「評論匯入」頁籤
+  const adminTabs = isSuperAdmin
+    ? `<button class="tab-btn active" data-tab="stores">門店管理</button>
         <button class="tab-btn" data-tab="areas">區域管理</button>
         <button class="tab-btn" data-tab="groups">品牌群組</button>
         <button class="tab-btn" data-tab="business">事業群</button>
         <button class="tab-btn" data-tab="users">使用者權限</button>
-        <button class="tab-btn" data-tab="import">評論匯入</button>
-      </div>
+        <button class="tab-btn" data-tab="import">評論匯入</button>`
+    : `<button class="tab-btn active" data-tab="import">評論匯入</button>`
+
+  container.innerHTML = `
+    <div class="page-header"><h2>⚙️ 資料管理</h2></div>
+    <div class="page-content">
+      <div class="tabs">${adminTabs}</div>
       <div id="tab-content"></div>
     </div>
   `
@@ -36,7 +42,7 @@ export function renderAdmin(container, user, roleInfo) {
     })
   })
 
-  loadTab('stores')
+  loadTab(isSuperAdmin ? 'stores' : 'import')
 }
 
 async function loadTab(tab) {
