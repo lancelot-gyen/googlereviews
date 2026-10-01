@@ -89,6 +89,11 @@ export async function resolveRole(email) {
   return { role, canReply, scopeIds: [], scopeNames: [] }
 }
 
+// 全域角色查評論時不以 stores 表過濾，未登記門店的評論也要看得到
+export function hasGlobalAccess(roleInfo) {
+  return roleInfo.role === ROLES.SUPER_ADMIN || roleInfo.role === ROLES.HEADQUARTERS
+}
+
 export async function getAccessibleStoreNames(roleInfo) {
   const { role, scopeIds, scopeNames } = roleInfo
   let names = []

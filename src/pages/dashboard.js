@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js'
-import { getAccessibleStoreNames } from '../lib/auth.js'
+import { getAccessibleStoreNames, hasGlobalAccess } from '../lib/auth.js'
 import { navigateTo } from './layout.js'
 
 const STAR_MAP = { 'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 'FIVE': 5 }
@@ -83,9 +83,6 @@ async function loadDashboard(allStoreNames, filters, container, user, roleInfo) 
   const body = document.getElementById('dashboard-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div> 計算中…</div>'
 
-  // 決定查詢的門店範圍
-  const targetStores = filters.store ? [filters.store] : allStoreNames
-
   // 日期轉換（dateTo 包含當天整天）
   const dateFrom = filters.dateFrom ? new Date(filters.dateFrom + 'T00:00:00').toISOString() : null
   const dateTo   = filters.dateTo   ? new Date(filters.dateTo   + 'T23:59:59').toISOString() : null
@@ -93,7 +90,9 @@ async function loadDashboard(allStoreNames, filters, container, user, roleInfo) 
   let query = supabase
     .from('google_reviews')
     .select('star_rating, process_status, branch_name, review_time')
-    .in('branch_name', targetStores)
+
+  if (filters.store)                   query = query.eq('branch_name', filters.store)
+  else if (!hasGlobalAccess(roleInfo)) query = query.in('branch_name', allStoreNames)
 
   if (dateFrom) query = query.gte('review_time', dateFrom)
   if (dateTo)   query = query.lte('review_time', dateTo)

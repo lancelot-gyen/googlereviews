@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js'
-import { getAccessibleStoreNames } from '../lib/auth.js'
+import { getAccessibleStoreNames, hasGlobalAccess } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 
 const PAGE_SIZE = 20
@@ -191,7 +191,8 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
       let query = supabase
         .from('google_reviews')
         .select('*', { count: 'exact' })
-        .in('branch_name', storeNames)
+
+      if (!hasGlobalAccess(roleInfo)) query = query.in('branch_name', storeNames)
 
       if (!isClientSort) {
         query = query.order(sort.col, { ascending: sort.dir === 'asc' })
