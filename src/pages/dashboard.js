@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js'
-import { getAccessibleStoreNames, hasGlobalAccess } from '../lib/auth.js'
+import { getAccessibleStoreNames, getAccessibleBrands, hasGlobalAccess } from '../lib/auth.js'
 import { navigateTo } from './layout.js'
 
 const STAR_MAP = { 'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 'FIVE': 5 }
@@ -14,23 +14,37 @@ export async function renderDashboard(container, user, roleInfo) {
 
   const allStoreNames = await getAccessibleStoreNames(roleInfo)
   const uniqueStores  = allStoreNames.slice().sort()
+  const brands        = await getAccessibleBrands(allStoreNames)
+  const brandById     = Object.fromEntries(brands.map(b => [b.id, b]))
+
+  const storeOptionsHtml = brandId =>
+    '<option value="">全部門店</option>' +
+    (brandId ? brandById[brandId].stores : uniqueStores)
+      .map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')
 
   // 預設日期：近 30 天
   const today    = new Date()
   const d30ago   = new Date(today); d30ago.setDate(today.getDate() - 30)
   const fmtInput = d => d.toISOString().slice(0, 10)
 
-  let filters = { store: '', dateFrom: fmtInput(d30ago), dateTo: fmtInput(today) }
+  let filters = { brand: '', store: '', dateFrom: fmtInput(d30ago), dateTo: fmtInput(today) }
 
   // ── 渲染外框（filter bar + 資料區）──
   container.querySelector('.page-content').innerHTML = `
     <div class="filter-bar">
+      ${brands.length > 1 ? `
+      <div class="filter-group">
+        <label>品牌</label>
+        <select class="form-control" id="d-brand">
+          <option value="">全部品牌</option>
+          ${brands.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}
+        </select>
+      </div>` : ''}
       ${uniqueStores.length > 1 ? `
       <div class="filter-group">
         <label>門店</label>
         <select class="form-control" id="d-store" style="min-width:200px">
-          <option value="">全部門店</option>
-          ${uniqueStores.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}
+          ${storeOptionsHtml('')}
         </select>
       </div>` : ''}
       <div class="filter-group">
@@ -49,18 +63,33 @@ export async function renderDashboard(container, user, roleInfo) {
     </div>
   `
 
-  const doLoad = () => loadDashboard(allStoreNames, filters, container, user, roleInfo)
+  const doLoad = () => loadDashboard(allStoreNames, brandById, filters, container, user, roleInfo)
 
-  document.getElementById('btn-d-search').addEventListener('click', () => {
+  const readFilters = () => {
+    filters.brand    = document.getElementById('d-brand')?.value ?? ''
     filters.store    = document.getElementById('d-store')?.value ?? ''
     filters.dateFrom = document.getElementById('d-from').value
     filters.dateTo   = document.getElementById('d-to').value
+  }
+
+  // 切換品牌時，門店選單只列出該品牌的門店
+  document.getElementById('d-brand')?.addEventListener('change', e => {
+    const storeSel = document.getElementById('d-store')
+    if (!storeSel) return
+    const prev = storeSel.value
+    storeSel.innerHTML = storeOptionsHtml(e.target.value)
+    storeSel.value = [...storeSel.options].some(o => o.value === prev) ? prev : ''
+  })
+
+  document.getElementById('btn-d-search').addEventListener('click', () => {
+    readFilters()
     doLoad()
   })
 
   document.getElementById('btn-d-reset').addEventListener('click', () => {
-    filters = { store: '', dateFrom: fmtInput(d30ago), dateTo: fmtInput(today) }
-    if (document.getElementById('d-store')) document.getElementById('d-store').value = ''
+    filters = { brand: '', store: '', dateFrom: fmtInput(d30ago), dateTo: fmtInput(today) }
+    if (document.getElementById('d-brand')) document.getElementById('d-brand').value = ''
+    if (document.getElementById('d-store')) document.getElementById('d-store').innerHTML = storeOptionsHtml('')
     document.getElementById('d-from').value = filters.dateFrom
     document.getElementById('d-to').value   = filters.dateTo
     doLoad()
@@ -69,9 +98,7 @@ export async function renderDashboard(container, user, roleInfo) {
   // Enter 鍵也可觸發
   ;['d-from', 'd-to'].forEach(id =>
     document.getElementById(id)?.addEventListener('change', () => {
-      filters.store    = document.getElementById('d-store')?.value ?? ''
-      filters.dateFrom = document.getElementById('d-from').value
-      filters.dateTo   = document.getElementById('d-to').value
+      readFilters()
       doLoad()
     })
   )
@@ -79,7 +106,7 @@ export async function renderDashboard(container, user, roleInfo) {
   doLoad()
 }
 
-async function loadDashboard(allStoreNames, filters, container, user, roleInfo) {
+async function loadDashboard(allStoreNames, brandById, filters, container, user, roleInfo) {
   const body = document.getElementById('dashboard-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div> 計算中…</div>'
 
@@ -92,6 +119,7 @@ async function loadDashboard(allStoreNames, filters, container, user, roleInfo) 
     .select('star_rating, process_status, branch_name, review_time')
 
   if (filters.store)                   query = query.eq('branch_name', filters.store)
+  else if (filters.brand)              query = query.in('branch_name', brandById[filters.brand].stores)
   else if (!hasGlobalAccess(roleInfo)) query = query.in('branch_name', allStoreNames)
 
   if (dateFrom) query = query.gte('review_time', dateFrom)
@@ -157,8 +185,11 @@ async function loadDashboard(allStoreNames, filters, container, user, roleInfo) 
   }).join('')
 
   // ── 篩選條件說明文字 ──
+  const scopeLabel = filters.store
+    ? filters.store
+    : filters.brand ? brandById[filters.brand].name : '全部門店'
   const filterDesc = [
-    filters.store    ? `門店：${filters.store}` : '全部門店',
+    filters.store ? `門店：${filters.store}` : filters.brand ? `品牌：${scopeLabel}` : '全部門店',
     filters.dateFrom ? `${filters.dateFrom}` : '',
     filters.dateTo   ? `～ ${filters.dateTo}` : '',
   ].filter(Boolean).join('　')
@@ -173,7 +204,7 @@ async function loadDashboard(allStoreNames, filters, container, user, roleInfo) 
         <div class="icon-circle">📋</div>
         <div class="label">📋 評論總數</div>
         <div class="value">${total}</div>
-        <div class="sub">${filters.store || '全部門店'}</div>
+        <div class="sub">${esc(scopeLabel)}</div>
       </div>
       <div class="stat-card danger">
         <div class="icon-circle">⚠️</div>

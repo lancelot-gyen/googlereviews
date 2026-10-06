@@ -120,3 +120,20 @@ export async function getAccessibleStoreNames(roleInfo) {
   // 去除重複
   return [...new Set(names)]
 }
+
+// 回傳 [{ id, name, stores }]，只含 storeNames 中至少有一間門店的品牌
+export async function getAccessibleBrands(storeNames) {
+  const [{ data: brandRows }, { data: storeRows }] = await Promise.all([
+    supabase.from('google_group').select('id, group_name').order('id'),
+    supabase.from('stores').select('store_name, group_id'),
+  ])
+  const accessible  = new Set(storeNames)
+  const brandStores = {}
+  for (const s of storeRows ?? []) {
+    if (!s.group_id || !accessible.has(s.store_name)) continue
+    ;(brandStores[s.group_id] ??= new Set()).add(s.store_name)
+  }
+  return (brandRows ?? [])
+    .filter(b => brandStores[b.id])
+    .map(b => ({ id: String(b.id), name: b.group_name, stores: [...brandStores[b.id]].sort() }))
+}

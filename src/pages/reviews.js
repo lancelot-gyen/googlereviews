@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js'
-import { getAccessibleStoreNames, hasGlobalAccess } from '../lib/auth.js'
+import { getAccessibleStoreNames, getAccessibleBrands, hasGlobalAccess } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 
 const PAGE_SIZE = 20
@@ -32,20 +32,9 @@ function fmtDate(ts) {
 }
 
 export async function renderReviews(container, user, roleInfo, opts = {}) {
-  const [storeNames, { data: brandRows }, { data: storeRows }] = await Promise.all([
-    getAccessibleStoreNames(roleInfo),
-    supabase.from('google_group').select('id, group_name').order('id'),
-    supabase.from('stores').select('store_name, group_id'),
-  ])
-
-  // 品牌 → 可存取的門店名稱
-  const accessible  = new Set(storeNames)
-  const brandStores = {}
-  for (const s of storeRows ?? []) {
-    if (!s.group_id || !accessible.has(s.store_name)) continue
-    ;(brandStores[s.group_id] ??= new Set()).add(s.store_name)
-  }
-  const brands = (brandRows ?? []).filter(b => brandStores[b.id])
+  const storeNames = await getAccessibleStoreNames(roleInfo)
+  const brands     = await getAccessibleBrands(storeNames)
+  const brandById  = Object.fromEntries(brands.map(b => [b.id, b]))
 
   let currentPage = 1
   let filters = {
@@ -62,7 +51,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
   const uniqueStores = storeNames.slice().sort()
 
   const storeOptionsHtml = (brandId, selected) => {
-    const list = brandId ? [...brandStores[brandId]].sort() : uniqueStores
+    const list = brandId ? brandById[brandId].stores : uniqueStores
     return `<option value="">全部門店</option>` +
       list.map(s => `<option value="${esc(s)}" ${selected === s ? 'selected' : ''}>${esc(s)}</option>`).join('')
   }
@@ -95,7 +84,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
           <label>品牌</label>
           <select class="form-control" id="f-brand">
             <option value="">全部品牌</option>
-            ${brands.map(b => `<option value="${b.id}">${esc(b.group_name)}</option>`).join('')}
+            ${brands.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}
           </select>
         </div>` : ''}
         ${uniqueStores.length > 1 ? `
@@ -227,7 +216,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
         .from('google_reviews')
         .select('*', { count: 'exact' })
 
-      if (filters.brand)                   query = query.in('branch_name', [...brandStores[filters.brand]])
+      if (filters.brand)                   query = query.in('branch_name', brandById[filters.brand].stores)
       else if (!hasGlobalAccess(roleInfo)) query = query.in('branch_name', storeNames)
 
       if (!isClientSort) {
