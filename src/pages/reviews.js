@@ -32,10 +32,24 @@ function fmtDate(ts) {
 }
 
 export async function renderReviews(container, user, roleInfo, opts = {}) {
-  const storeNames = await getAccessibleStoreNames(roleInfo)
+  const [storeNames, { data: brandRows }, { data: storeRows }] = await Promise.all([
+    getAccessibleStoreNames(roleInfo),
+    supabase.from('google_group').select('id, group_name').order('id'),
+    supabase.from('stores').select('store_name, group_id'),
+  ])
+
+  // 品牌 → 可存取的門店名稱
+  const accessible  = new Set(storeNames)
+  const brandStores = {}
+  for (const s of storeRows ?? []) {
+    if (!s.group_id || !accessible.has(s.store_name)) continue
+    ;(brandStores[s.group_id] ??= new Set()).add(s.store_name)
+  }
+  const brands = (brandRows ?? []).filter(b => brandStores[b.id])
 
   let currentPage = 1
   let filters = {
+    brand:    '',
     store:    opts.filterStore    || '',
     dateFrom: opts.filterDateFrom || '',
     dateTo:   opts.filterDateTo   || '',
@@ -46,6 +60,12 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
   let sort = { col: 'review_time', dir: 'desc' }
 
   const uniqueStores = storeNames.slice().sort()
+
+  const storeOptionsHtml = (brandId, selected) => {
+    const list = brandId ? [...brandStores[brandId]].sort() : uniqueStores
+    return `<option value="">全部門店</option>` +
+      list.map(s => `<option value="${esc(s)}" ${selected === s ? 'selected' : ''}>${esc(s)}</option>`).join('')
+  }
 
   // 麵包屑：從總覽點進來時顯示（含日期資訊）
   const hasDashboardFilter = opts.filterStore || opts.filterDateFrom || opts.filterDateTo
@@ -70,12 +90,19 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     <div class="page-content">
       ${breadcrumb}
       <div class="filter-bar">
+        ${brands.length > 1 ? `
+        <div class="filter-group">
+          <label>品牌</label>
+          <select class="form-control" id="f-brand">
+            <option value="">全部品牌</option>
+            ${brands.map(b => `<option value="${b.id}">${esc(b.group_name)}</option>`).join('')}
+          </select>
+        </div>` : ''}
         ${uniqueStores.length > 1 ? `
         <div class="filter-group">
           <label>門店</label>
           <select class="form-control" id="f-store">
-            <option value="">全部門店</option>
-            ${uniqueStores.map(s => `<option value="${esc(s)}" ${filters.store === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+            ${storeOptionsHtml('', filters.store)}
           </select>
         </div>` : ''}
         <div class="filter-group">
@@ -125,7 +152,14 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
     navigateTo('dashboard', user, roleInfo)
   })
 
+  // 切換品牌時，門店選單只列出該品牌的門店
+  document.getElementById('f-brand')?.addEventListener('change', e => {
+    const storeSel = document.getElementById('f-store')
+    if (storeSel) storeSel.innerHTML = storeOptionsHtml(e.target.value, storeSel.value)
+  })
+
   const readFilters = () => ({
+    brand:    document.getElementById('f-brand')?.value     ?? '',
     store:    document.getElementById('f-store')?.value     ?? '',
     dateFrom: document.getElementById('f-date-from')?.value ?? '',
     dateTo:   document.getElementById('f-date-to')?.value   ?? '',
@@ -142,13 +176,14 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
 
   document.getElementById('btn-search').addEventListener('click', doSearch)
   document.getElementById('btn-reset').addEventListener('click', () => {
-    if (document.getElementById('f-store'))     document.getElementById('f-store').value     = ''
+    if (document.getElementById('f-brand'))     document.getElementById('f-brand').value     = ''
+    if (document.getElementById('f-store'))     document.getElementById('f-store').innerHTML = storeOptionsHtml('', '')
     if (document.getElementById('f-date-from')) document.getElementById('f-date-from').value = ''
     if (document.getElementById('f-date-to'))   document.getElementById('f-date-to').value   = ''
     document.getElementById('f-star').value   = ''
     document.getElementById('f-status').value = ''
     document.getElementById('f-search').value = ''
-    filters = { store: '', dateFrom: '', dateTo: '', star: '', status: '', search: '' }
+    filters = { brand: '', store: '', dateFrom: '', dateTo: '', star: '', status: '', search: '' }
     currentPage = 1
     loadReviews()
   })
@@ -192,7 +227,8 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
         .from('google_reviews')
         .select('*', { count: 'exact' })
 
-      if (!hasGlobalAccess(roleInfo)) query = query.in('branch_name', storeNames)
+      if (filters.brand)                   query = query.in('branch_name', [...brandStores[filters.brand]])
+      else if (!hasGlobalAccess(roleInfo)) query = query.in('branch_name', storeNames)
 
       if (!isClientSort) {
         query = query.order(sort.col, { ascending: sort.dir === 'asc' })
