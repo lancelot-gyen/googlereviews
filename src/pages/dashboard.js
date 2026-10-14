@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js'
-import { getAccessibleStoreNames, getAccessibleBrands, hasGlobalAccess } from '../lib/auth.js'
+import { getAccessibleStores, hasGlobalAccess } from '../lib/auth.js'
 import { navigateTo } from './layout.js'
 
 const STAR_MAP = { 'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 'FIVE': 5 }
@@ -12,15 +12,14 @@ export async function renderDashboard(container, user, roleInfo) {
     </div>
   `
 
-  const allStoreNames = await getAccessibleStoreNames(roleInfo)
-  const uniqueStores  = allStoreNames.slice().sort()
-  const brands        = await getAccessibleBrands(allStoreNames)
-  const brandById     = Object.fromEntries(brands.map(b => [b.id, b]))
+  const scope     = await getAccessibleStores(roleInfo)
+  const { stores, brands } = scope
+  const brandById = Object.fromEntries(brands.map(b => [b.id, b]))
 
   const storeOptionsHtml = brandId =>
     '<option value="">全部門店</option>' +
-    (brandId ? brandById[brandId].stores : uniqueStores)
-      .map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')
+    (brandId ? stores.filter(s => brandById[brandId].codes.includes(s.code)) : stores)
+      .map(s => `<option value="${esc(s.code)}">${esc(s.name)}</option>`).join('')
 
   // 預設日期：近 30 天
   const today    = new Date()
@@ -40,7 +39,7 @@ export async function renderDashboard(container, user, roleInfo) {
           ${brands.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}
         </select>
       </div>` : ''}
-      ${uniqueStores.length > 1 ? `
+      ${stores.length > 1 ? `
       <div class="filter-group">
         <label>門店</label>
         <select class="form-control" id="d-store" style="min-width:200px">
@@ -63,7 +62,7 @@ export async function renderDashboard(container, user, roleInfo) {
     </div>
   `
 
-  const doLoad = () => loadDashboard(allStoreNames, brandById, filters, container, user, roleInfo)
+  const doLoad = () => loadDashboard(scope, brandById, filters, container, user, roleInfo)
 
   const readFilters = () => {
     filters.brand    = document.getElementById('d-brand')?.value ?? ''
@@ -106,7 +105,8 @@ export async function renderDashboard(container, user, roleInfo) {
   doLoad()
 }
 
-async function loadDashboard(allStoreNames, brandById, filters, container, user, roleInfo) {
+async function loadDashboard(scope, brandById, filters, container, user, roleInfo) {
+  const { stores, nameByCode } = scope
   const body = document.getElementById('dashboard-body')
   body.innerHTML = '<div class="loading"><div class="spinner"></div> 計算中…</div>'
 
@@ -116,11 +116,11 @@ async function loadDashboard(allStoreNames, brandById, filters, container, user,
 
   let query = supabase
     .from('google_reviews')
-    .select('star_rating, process_status, branch_name, review_time')
+    .select('star_rating, process_status, branch_name, location_id, review_time')
 
-  if (filters.store)                   query = query.eq('branch_name', filters.store)
-  else if (filters.brand)              query = query.in('branch_name', brandById[filters.brand].stores)
-  else if (!hasGlobalAccess(roleInfo)) query = query.in('branch_name', allStoreNames)
+  if (filters.store)                   query = query.eq('location_id', filters.store)
+  else if (filters.brand)              query = query.in('location_id', brandById[filters.brand].codes)
+  else if (!hasGlobalAccess(roleInfo)) query = query.in('location_id', stores.map(s => s.code))
 
   if (dateFrom) query = query.gte('review_time', dateFrom)
   if (dateTo)   query = query.lte('review_time', dateTo)
@@ -143,25 +143,27 @@ async function loadDashboard(allStoreNames, brandById, filters, container, user,
     : '—'
 
   // ── 各門店統計 ──
+  // 以門店代碼分組；未登記的門店以評論上的店名顯示
   const byStore = {}
   for (const r of reviews) {
-    if (!byStore[r.branch_name]) byStore[r.branch_name] = { total: 0, sum: 0, count: 0, unprocessed: 0 }
-    byStore[r.branch_name].total++
-    if (r.process_status === '未處理') byStore[r.branch_name].unprocessed++
+    const st = byStore[r.location_id] ??= { name: nameByCode[r.location_id] ?? r.branch_name, total: 0, sum: 0, count: 0, unprocessed: 0 }
+    st.total++
+    if (r.process_status === '未處理') st.unprocessed++
     if (STAR_MAP[r.star_rating]) {
-      byStore[r.branch_name].sum += STAR_MAP[r.star_rating]
-      byStore[r.branch_name].count++
+      st.sum += STAR_MAP[r.star_rating]
+      st.count++
     }
   }
 
   const sortedStores = Object.entries(byStore)
     .sort((a, b) => b[1].unprocessed - a[1].unprocessed || b[1].total - a[1].total)
 
-  const storeRows = sortedStores.map(([name, s]) => {
+  const storeRows = sortedStores.map(([code, s]) => {
+    const name  = s.name
     const avg   = s.count ? (s.sum / s.count).toFixed(2) : '—'
     const stars = s.count ? starBar(s.sum / s.count) : ''
     return `
-      <tr class="store-row" data-store="${esc(name)}" title="點擊查看 ${esc(name)} 的評論">
+      <tr class="store-row" data-store="${esc(code)}" data-store-name="${esc(name)}" title="點擊查看 ${esc(name)} 的評論">
         <td>
           <span class="store-name-link">
             <span class="store-name-text">${esc(name)}</span>
@@ -186,10 +188,10 @@ async function loadDashboard(allStoreNames, brandById, filters, container, user,
 
   // ── 篩選條件說明文字 ──
   const scopeLabel = filters.store
-    ? filters.store
+    ? (nameByCode[filters.store] ?? filters.store)
     : filters.brand ? brandById[filters.brand].name : '全部門店'
   const filterDesc = [
-    filters.store ? `門店：${filters.store}` : filters.brand ? `品牌：${scopeLabel}` : '全部門店',
+    filters.store ? `門店：${scopeLabel}` : filters.brand ? `品牌：${scopeLabel}` : '全部門店',
     filters.dateFrom ? `${filters.dateFrom}` : '',
     filters.dateTo   ? `～ ${filters.dateTo}` : '',
   ].filter(Boolean).join('　')
@@ -255,7 +257,8 @@ async function loadDashboard(allStoreNames, brandById, filters, container, user,
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
       document.querySelector('.nav-item[data-page="reviews"]')?.classList.add('active')
       navigateTo('reviews', user, roleInfo, {
-        filterStore:    row.dataset.store,
+        filterStore:     row.dataset.store,
+        filterStoreName: row.dataset.storeName,
         filterDateFrom: filters.dateFrom,
         filterDateTo:   filters.dateTo,
       })

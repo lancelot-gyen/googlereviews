@@ -54,33 +54,54 @@ async function loadTab(tab) {
 
 // ── Stores ──
 async function stores(content) {
-  const [{ data: googleGroups }, { data: areaList }, { data: bgList }, { data: rows, error }] =
+  const [{ data: googleGroups }, { data: areaList }, { data: bgList }, { data: rows, error }, { data: locations }] =
     await Promise.all([
       supabase.from('google_group').select('id, group_name'),
       supabase.from('areas').select('id, area_name'),
       supabase.from('business_groups').select('id, business_group_name'),
       supabase.from('stores').select(`
-        id, store_name, group_id, area_id, business_group_id,
+        id, store_name, location_id, group_id, area_id, business_group_id,
         google_group(id, group_name),
         areas(id, area_name),
         business_groups(id, business_group_name),
         store_members(id, name, email)
       `).order('id'),
+      supabase.from('review_locations').select('location_id, latest_name, review_count'),
     ])
 
   if (error) { content.innerHTML = errHtml(error); return }
 
+  // 評論中出現、但還沒有門店使用其代碼的 Google 門店
+  const locByCode    = Object.fromEntries((locations ?? []).map(l => [l.location_id, l]))
+  const usedCodes    = new Set(rows.map(r => r.location_id).filter(Boolean))
+  const unregistered = (locations ?? [])
+    .filter(l => !usedCodes.has(l.location_id))
+    .sort((a, b) => b.review_count - a.review_count)
+
+  const unregisteredHtml = unregistered.length ? `
+    <div class="info-block highlight" style="margin-bottom:16px;font-size:13px">
+      <div style="font-weight:600;margin-bottom:8px">⚠️ 有 ${unregistered.length} 間 Google 門店的評論還沒有對應的門店，登記後才能在門店與品牌篩選中選到</div>
+      ${unregistered.map(l => `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <span style="flex:1">${esc(l.latest_name)}
+            <span style="color:var(--gray-600)">（${l.review_count} 筆評論・代碼 ${esc(l.location_id)}）</span></span>
+          <button class="btn btn-secondary btn-sm btn-register-loc" data-code="${esc(l.location_id)}">登記</button>
+        </div>`).join('')}
+    </div>` : ''
+
   content.innerHTML = `
+    ${unregisteredHtml}
     <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
       <button class="btn btn-primary" id="btn-add-store">＋ 新增門店</button>
     </div>
     <div class="table-wrap"><div class="table-scroll"><table>
       <thead><tr>
-        <th>門店名稱</th><th>品牌</th><th>區域</th><th>事業群</th><th>門店人員</th><th>操作</th>
+        <th>門店名稱</th><th>門店代碼</th><th>品牌</th><th>區域</th><th>事業群</th><th>門店人員</th><th>操作</th>
       </tr></thead>
       <tbody>
         ${rows.map(r => `<tr>
           <td>${esc(r.store_name)}</td>
+          <td style="font-size:12px">${codeCell(r.location_id, locByCode)}</td>
           <td>${esc(r.google_group?.group_name ?? '—')}</td>
           <td>${esc(r.areas?.area_name ?? '—')}</td>
           <td>${esc(r.business_groups?.business_group_name ?? '—')}</td>
@@ -93,28 +114,49 @@ async function stores(content) {
     </table></div></div>
   `
 
-  document.getElementById('btn-add-store').addEventListener('click', () =>
-    storeModal(null, googleGroups, areaList, bgList))
+  const lists = { googleGroups, areaList, bgList, unregistered, locByCode }
+  document.getElementById('btn-add-store').addEventListener('click', () => storeModal(null, lists))
   content.querySelectorAll('.btn-edit-store').forEach(btn =>
-    btn.addEventListener('click', () =>
-      storeModal(rows.find(r => r.id == btn.dataset.id), googleGroups, areaList, bgList)))
+    btn.addEventListener('click', () => storeModal(rows.find(r => r.id == btn.dataset.id), lists)))
+  content.querySelectorAll('.btn-register-loc').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const loc = locByCode[btn.dataset.code]
+      storeModal(null, lists, { store_name: loc.latest_name, location_id: loc.location_id })
+    }))
 }
 
-function storeModal(row, googleGroups, areaList, bgList) {
+function codeCell(code, locByCode) {
+  if (!code) return '<span style="color:#b71c1c">未設定</span>'
+  const loc = locByCode[code]
+  if (!loc) return `${esc(code)}<div style="color:var(--gray-600)">尚無評論</div>`
+  return `${esc(code)}<div style="color:var(--gray-600)">Google：${esc(loc.latest_name)}</div>`
+}
+
+function storeModal(row, { googleGroups, areaList, bgList, unregistered, locByCode }, prefill = null) {
   const isEdit = !!row
+  const init   = row ?? prefill ?? {}
   let pendingMembers = (row?.store_members ?? []).map(m => ({ ...m }))
 
   showModal(isEdit ? '編輯門店' : '新增門店', `
     <div class="form-group">
       <label class="form-label">門店名稱 *</label>
-      <input class="form-input" id="m-store-name" value="${esc(row?.store_name ?? '')}" />
+      <input class="form-input" id="m-store-name" value="${esc(init.store_name ?? '')}" />
+      <div style="font-size:12px;color:var(--gray-600);margin-top:4px">顯示用名稱，可自由修改，不影響評論對應</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">門店代碼（Google 門店 ID）</label>
+      <input class="form-input" id="m-location-id" list="m-location-options" value="${esc(init.location_id ?? '')}" placeholder="從清單選擇尚未登記的 Google 門店" />
+      <datalist id="m-location-options">
+        ${unregistered.map(l => `<option value="${esc(l.location_id)}">${esc(l.latest_name)}</option>`).join('')}
+      </datalist>
+      <div style="font-size:12px;color:var(--gray-600);margin-top:4px">評論依此代碼對應門店；未設定代碼的門店不會顯示任何評論</div>
     </div>
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">品牌群組</label>
         <select class="form-input" id="m-group-id">
           <option value="">—</option>
-          ${(googleGroups ?? []).map(g => `<option value="${g.id}" ${row?.group_id == g.id ? 'selected' : ''}>${esc(g.group_name)}</option>`).join('')}
+          ${(googleGroups ?? []).map(g => `<option value="${g.id}" ${init.group_id == g.id ? 'selected' : ''}>${esc(g.group_name)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -145,8 +187,12 @@ function storeModal(row, googleGroups, areaList, bgList) {
     const name = document.getElementById('m-store-name').value.trim()
     if (!name) { toast('門店名稱必填', 'error'); return false }
 
+    const locationId = document.getElementById('m-location-id').value.trim() || null
+    if (locationId && !locByCode[locationId] && !confirm('目前沒有任何評論使用這個門店代碼，確定要儲存嗎？')) return false
+
     const payload = {
       store_name: name,
+      location_id: locationId,
       group_id: document.getElementById('m-group-id').value || null,
       area_id: document.getElementById('m-area-id').value || null,
       business_group_id: document.getElementById('m-bg-id').value || null,

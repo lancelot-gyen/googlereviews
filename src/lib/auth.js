@@ -52,13 +52,9 @@ export async function resolveRole(email) {
   if (role === ROLES.STORE) {
     const { data } = await supabase
       .from('store_members')
-      .select('store_id, stores(store_name)')
+      .select('store_id')
       .eq('email', email)
-    return {
-      role, canReply,
-      scopeIds:   data?.map(r => r.store_id) ?? [],
-      scopeNames: data?.map(r => r.stores?.store_name).filter(Boolean) ?? [],
-    }
+    return { role, canReply, scopeIds: data?.map(r => r.store_id) ?? [] }
   }
 
   if (role === ROLES.AREA_MANAGER) {
@@ -66,11 +62,7 @@ export async function resolveRole(email) {
       .from('area_members')
       .select('area_id')
       .eq('email', email)
-    return {
-      role, canReply,
-      scopeIds:   data?.map(r => r.area_id) ?? [],
-      scopeNames: [],
-    }
+    return { role, canReply, scopeIds: data?.map(r => r.area_id) ?? [] }
   }
 
   if (role === ROLES.GROUP_MANAGER) {
@@ -78,15 +70,11 @@ export async function resolveRole(email) {
       .from('business_group_members')
       .select('business_group_id')
       .eq('email', email)
-    return {
-      role, canReply,
-      scopeIds:   data?.map(r => r.business_group_id) ?? [],
-      scopeNames: [],
-    }
+    return { role, canReply, scopeIds: data?.map(r => r.business_group_id) ?? [] }
   }
 
   // headquarters / super_admin — 全域存取，不需 scope
-  return { role, canReply, scopeIds: [], scopeNames: [] }
+  return { role, canReply, scopeIds: [] }
 }
 
 // 全域角色查評論時不以 stores 表過濾，未登記門店的評論也要看得到
@@ -94,46 +82,32 @@ export function hasGlobalAccess(roleInfo) {
   return roleInfo.role === ROLES.SUPER_ADMIN || roleInfo.role === ROLES.HEADQUARTERS
 }
 
-export async function getAccessibleStoreNames(roleInfo) {
-  const { role, scopeIds, scopeNames } = roleInfo
-  let names = []
+// 評論以 Google 門店代碼（location_id）對應門店，店名可自由修改
+// 回傳 { stores: [{ code, name }], brands: [{ id, name, codes }], nameByCode }
+export async function getAccessibleStores(roleInfo) {
+  const { role, scopeIds } = roleInfo
+  let query = supabase.from('stores').select('store_name, location_id, group_id').order('id')
+  if (role === ROLES.GROUP_MANAGER)     query = query.in('business_group_id', scopeIds)
+  else if (role === ROLES.AREA_MANAGER) query = query.in('area_id', scopeIds)
+  else if (role === ROLES.STORE)        query = query.in('id', scopeIds)
 
-  if (role === ROLES.SUPER_ADMIN || role === ROLES.HEADQUARTERS) {
-    const { data } = await supabase.from('stores').select('store_name')
-    names = data?.map(s => s.store_name) ?? []
-  } else if (role === ROLES.GROUP_MANAGER) {
-    const { data } = await supabase
-      .from('stores')
-      .select('store_name')
-      .in('business_group_id', scopeIds)
-    names = data?.map(s => s.store_name) ?? []
-  } else if (role === ROLES.AREA_MANAGER) {
-    const { data } = await supabase
-      .from('stores')
-      .select('store_name')
-      .in('area_id', scopeIds)
-    names = data?.map(s => s.store_name) ?? []
-  } else if (role === ROLES.STORE) {
-    names = scopeNames ?? []
-  }
-
-  // 去除重複
-  return [...new Set(names)]
-}
-
-// 回傳 [{ id, name, stores }]，只含 storeNames 中至少有一間門店的品牌
-export async function getAccessibleBrands(storeNames) {
-  const [{ data: brandRows }, { data: storeRows }] = await Promise.all([
+  const [{ data: rows }, { data: brandRows }] = await Promise.all([
+    query,
     supabase.from('google_group').select('id, group_name').order('id'),
-    supabase.from('stores').select('store_name, group_id'),
   ])
-  const accessible  = new Set(storeNames)
-  const brandStores = {}
-  for (const s of storeRows ?? []) {
-    if (!s.group_id || !accessible.has(s.store_name)) continue
-    ;(brandStores[s.group_id] ??= new Set()).add(s.store_name)
+
+  // 同一代碼可能有重複登記的門店，只取第一筆
+  const byCode = new Map()
+  for (const r of rows ?? []) {
+    if (r.location_id && !byCode.has(r.location_id)) {
+      byCode.set(r.location_id, { code: r.location_id, name: r.store_name, groupId: r.group_id })
+    }
   }
-  return (brandRows ?? [])
-    .filter(b => brandStores[b.id])
-    .map(b => ({ id: String(b.id), name: b.group_name, stores: [...brandStores[b.id]].sort() }))
+  const stores = [...byCode.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+
+  const brands = (brandRows ?? [])
+    .map(b => ({ id: String(b.id), name: b.group_name, codes: stores.filter(s => s.groupId === b.id).map(s => s.code) }))
+    .filter(b => b.codes.length)
+
+  return { stores, brands, nameByCode: Object.fromEntries(stores.map(s => [s.code, s.name])) }
 }

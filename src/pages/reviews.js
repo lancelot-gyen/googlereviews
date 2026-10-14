@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js'
-import { getAccessibleStoreNames, getAccessibleBrands, hasGlobalAccess } from '../lib/auth.js'
+import { getAccessibleStores, hasGlobalAccess } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 
 const PAGE_SIZE = 20
@@ -32,9 +32,9 @@ function fmtDate(ts) {
 }
 
 export async function renderReviews(container, user, roleInfo, opts = {}) {
-  const storeNames = await getAccessibleStoreNames(roleInfo)
-  const brands     = await getAccessibleBrands(storeNames)
+  const { stores, brands, nameByCode } = await getAccessibleStores(roleInfo)
   const brandById  = Object.fromEntries(brands.map(b => [b.id, b]))
+  const storeLabel = r => nameByCode[r.location_id] ?? r.branch_name ?? '—'
 
   let currentPage = 1
   let filters = {
@@ -48,18 +48,16 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
   }
   let sort = { col: 'review_time', dir: 'desc' }
 
-  const uniqueStores = storeNames.slice().sort()
-
   const storeOptionsHtml = (brandId, selected) => {
-    const list = brandId ? brandById[brandId].stores : uniqueStores
+    const list = brandId ? stores.filter(s => brandById[brandId].codes.includes(s.code)) : stores
     return `<option value="">全部門店</option>` +
-      list.map(s => `<option value="${esc(s)}" ${selected === s ? 'selected' : ''}>${esc(s)}</option>`).join('')
+      list.map(s => `<option value="${esc(s.code)}" ${selected === s.code ? 'selected' : ''}>${esc(s.name)}</option>`).join('')
   }
 
   // 麵包屑：從總覽點進來時顯示（含日期資訊）
   const hasDashboardFilter = opts.filterStore || opts.filterDateFrom || opts.filterDateTo
   const breadcrumbSub = [
-    opts.filterStore    ? opts.filterStore : null,
+    opts.filterStore    ? (nameByCode[opts.filterStore] ?? opts.filterStoreName ?? opts.filterStore) : null,
     opts.filterDateFrom ? opts.filterDateFrom : null,
     opts.filterDateTo   ? `～ ${opts.filterDateTo}` : null,
   ].filter(Boolean).join('　')
@@ -87,7 +85,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
             ${brands.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}
           </select>
         </div>` : ''}
-        ${uniqueStores.length > 1 ? `
+        ${stores.length > 1 ? `
         <div class="filter-group">
           <label>門店</label>
           <select class="form-control" id="f-store">
@@ -216,8 +214,8 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
         .from('google_reviews')
         .select('*', { count: 'exact' })
 
-      if (filters.brand)                   query = query.in('branch_name', brandById[filters.brand].stores)
-      else if (!hasGlobalAccess(roleInfo)) query = query.in('branch_name', storeNames)
+      if (filters.brand)                   query = query.in('location_id', brandById[filters.brand].codes)
+      else if (!hasGlobalAccess(roleInfo)) query = query.in('location_id', stores.map(s => s.code))
 
       if (!isClientSort) {
         query = query.order(sort.col, { ascending: sort.dir === 'asc' })
@@ -225,7 +223,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
         query = query.order('review_time', { ascending: false })
       }
 
-      if (filters.store)    query = query.eq('branch_name', filters.store)
+      if (filters.store)    query = query.eq('location_id', filters.store)
       if (filters.dateFrom) query = query.gte('review_time', new Date(filters.dateFrom + 'T00:00:00').toISOString())
       if (filters.dateTo)   query = query.lte('review_time', new Date(filters.dateTo   + 'T23:59:59').toISOString())
       if (filters.star)     query = query.eq('star_rating', filters.star)
@@ -281,7 +279,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
           <tbody>
             ${rows.map(r => `
               <tr>
-                <td class="text-truncate" style="max-width:160px">${esc(r.branch_name ?? '—')}</td>
+                <td class="text-truncate" style="max-width:160px">${esc(storeLabel(r))}</td>
                 <td>${esc(r.reviewer_name ?? '匿名')}</td>
                 <td>${starsHtml(r.star_rating)}</td>
                 <td class="text-truncate">${esc(r.review_content ?? '（無內容）')}</td>
@@ -348,7 +346,7 @@ export async function renderReviews(container, user, roleInfo, opts = {}) {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">
             <div class="detail-row">
               <div class="detail-label">🏪 門店</div>
-              <div class="detail-value">${esc(review.branch_name ?? '—')}</div>
+              <div class="detail-value">${esc(storeLabel(review))}</div>
             </div>
             <div class="detail-row">
               <div class="detail-label">👤 評論者</div>
